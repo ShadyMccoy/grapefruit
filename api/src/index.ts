@@ -24,3 +24,14 @@ app.get("/", async (_req: Request, res: Response) => {
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
+
+app.get("/testdb", async (_req: Request, res: Response) => {
+  const session = driver.session();
+  try {
+    const result = await session.run("RETURN 1 AS num");
+    await session.close();
+    res.json({ success: true, value: result.records[0].get("num") });
+  } catch (err) {
+    res.status(500).json({ success: false, error: (err as Error).message });
+  }
+});
