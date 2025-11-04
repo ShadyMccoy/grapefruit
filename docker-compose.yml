@@ -12,6 +12,7 @@ services:
       - ./db/data:/data
       - ./db/logs:/logs
       - ./db/backups:/backups
+      - ./docker-init:/docker-entrypoint-initdb.d
     networks:
       - grapefruit-net
 
@@ -28,6 +29,9 @@ services:
       - neo4j
     networks:
       - grapefruit-net
+
+volumes:
+  neo4j_data:
 
 networks:
   grapefruit-net:
