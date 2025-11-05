@@ -78,6 +78,59 @@ Operations, containers, and workflows should be modular and composable — allow
 
 ---
 
+# Application Design
+
+## Typed Domain Layer & Repositories
+
+To ensure Grapefruit’s prototype and future production code are **safe, maintainable, and auditable**, we are establishing a **strongly-typed domain layer** with corresponding repositories:
+
+### 1. Domain Layer
+- **Purpose:** Defines the canonical, immutable “truth objects” of Grapefruit in TypeScript.
+- **Core interfaces:**
+  - `BaseNode` — shared properties (`id`, `tenantId`, `createdAt`)
+  - `Container` — physical vessels (`tank`, `barrel`, `press`) with capacity
+  - `ContainerState` — snapshot of a container’s contents at a point in time
+  - `Operation` — transformations consuming and producing container states (`transfer`, `blend`, `bottle`)
+- **Benefits:**
+  - Type safety ensures that every operation is consistent with the ontology.
+  - Helps IDEs catch errors before hitting Neo4j.
+  - Supports composable invariants and future GraphQL or REST APIs.
+
+### 2. Repository Layer
+- **Purpose:** Typed interface between the domain objects and Neo4j.
+- **Examples:**
+  - `ContainerRepo` — create/find containers
+  - `ContainerStateRepo` — create/find states, retrieve current state
+  - `OperationRepo` — create/find operations
+- **Benefits:**
+  - Encapsulates Cypher queries and session handling.
+  - Returns fully typed objects ready for invariants and API layers.
+  - Centralizes DB logic to simplify refactoring and testing.
+
+### 3. Invariants Module
+- **Purpose:** Enforces Grapefruit’s core truths before any mutation is committed.
+- **Example invariants:**
+  - Each container has at most one current state.
+  - Operations conserve volume.
+  - Container states have exactly one predecessor (except initial).
+- **Integration:** Called in the service layer or before repository writes to protect graph integrity.
+
+### 4. Prototype Flow
+- TypeScript ensures **compile-time correctness**.
+- Repositories handle DB interaction.
+- Invariants ensure **runtime truth**.
+- This setup allows a **prototype that is already production-quality in terms of typing and correctness**.
+
+### Next Steps
+- Populate `ContainerStateRepo` and `OperationRepo` with typed queries.  
+- Implement “Hello World” scripts to query containers and validate typing.  
+- Extend GraphQL/REST API layer using typed domain objects.
+
+---
+
+This ensures that Grapefruit is **prototype-safe, strongly typed, and ready for audit-compliant operations**, while keeping development fast and error-resistant.
+
+
 ## **Collaboration Guidelines**
 
 Grapefruit is designed for **AI-human co-development**.
