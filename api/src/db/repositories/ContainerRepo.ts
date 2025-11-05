@@ -1,6 +1,6 @@
 // db/repositories/ContainerRepo.ts
 import { Session } from "neo4j-driver";
-import { Container } from "../../domain/Container";
+import { Container } from "../../domain/nodes/Container";
 
 export class ContainerRepo {
   constructor(private session: Session) {}
