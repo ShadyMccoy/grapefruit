@@ -130,6 +130,37 @@ To ensure Grapefruit’s prototype and future production code are **safe, mainta
 
 This ensures that Grapefruit is **prototype-safe, strongly typed, and ready for audit-compliant operations**, while keeping development fast and error-resistant.
 
+## Winery Operation (Mental Model)
+
+A `WineryOperation` represents a physical transformation of material in the winery (e.g., blending, transfer, bottling). It connects **input container states** to **output container states**, preserving:
+
+- Exact volumes consumed and produced  
+- Lineage for every container at every point in time  
+- Traceability for auditing and cost calculation  
+
+**Example: Pouring TankB into TankA**
+
+| Container | Initial Volume | Input into Operation | Output from Operation |
+|-----------|----------------|--------------------|---------------------|
+| TankA     | 500 gal        | 500 gal            | 800 gal             |
+| TankB     | 400 gal        | 300 gal            | 0 gal remaining     |
+
+- `1 WineryOperation` node (`blend`)  
+- `2 input relationships` (`WINERY_OP_INPUT`) from TankA and TankB states  
+- `1 output relationship` (`WINERY_OP_OUTPUT`) to new TankA state (800 gal)  
+- Each `ContainerState` is linked to its `Container` node via `STATE_OF`  
+
+**Relationships:**
+
+- `ContainerState` → `WINERY_OP_INPUT` → `WineryOperation`  
+- `WineryOperation` → `WINERY_OP_OUTPUT` → `ContainerState`  
+- `ContainerState` → `STATE_OF` → `Container`  
+
+This structure ensures:
+
+- Volume balance can be validated automatically  
+- Full lineage reconstruction for audits or time-travel queries  
+- Immutable truths: every operation and resulting state is permanent  
 
 ## **Collaboration Guidelines**
 
