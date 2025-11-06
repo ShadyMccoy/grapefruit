@@ -1,4 +1,4 @@
-import { Movement, ResultedIn } from "../relationships/Movement";
+import { WineryOpInput, WineryOpOutput } from "../relationships/Movement";
 
 export type OperationType =
   | "transfer"
@@ -12,6 +12,6 @@ export interface WineryOperation {
   type: OperationType;
   description?: string;
 
-  inputs?: Movement[];
-  outputs?: ResultedIn[];
+  inputs?: WineryOpInput[];
+  outputs?: WineryOpOutput[];
 }

@@ -1,31 +1,26 @@
-// src/domain/relationships/Movement.ts
-import { GraphRelationship } from "../types/GraphRelationship";
+// src/domain/relationships/WineryOpRelationships.ts
 import { ContainerState } from "../nodes/ContainerState";
-import { WineryOperation } from "../nodes/Operation";
+import { WineryOperation } from "../nodes/WineryOperation";
 
-export interface MovementProps {
-  qtyLiters: number;
+export interface WineryOpInputProps {
+  qty: number;          // quantity contributed
   unit: "L" | "gal";
-  description?: string; // e.g. "Topping barrels 1–10"
+  description?: string; // optional note
 }
 
-export interface Movement {
-  from: ContainerState;
-  to: WineryOperation;
-  properties: MovementProps;
+export interface WineryOpInput {
+  from: Pick<ContainerState, "id">; // only 'id' required for pretotype
+  to?: Pick<WineryOperation, "id">; // optional, repo fills actual node
+  properties: WineryOpInputProps;
 }
 
-export interface ResultedInProps {
-  qtyLiters: number;
+export interface WineryOpOutputProps {
+  qty: number;
   unit: "L" | "gal";
 }
 
-/**
- * A ResultedIn connects a WineryOperation → ContainerState
- * representing material produced by an operation.
- */
-export interface ResultedIn {
-  from: WineryOperation;
-  to: ContainerState;
-  properties: ResultedInProps;
+export interface WineryOpOutput {
+  from?: Pick<WineryOperation, "id">;  // optional, repo fills actual node
+  to: Pick<ContainerState, "id">;      // only 'id' required for pretotype
+  properties: WineryOpOutputProps;
 }

@@ -1,6 +1,6 @@
 // core/Invariants.ts
 import { ContainerState } from "../domain/nodes/ContainerState";
-import { WineryOperation } from "../domain/nodes/Operation";
+import { WineryOperation } from "../domain/nodes/WineryOperation";
 import { ValidationResult } from "./ValidationResult";
 import { ContainerStateRepo } from "../db/repositories/ContainerStateRepo";
 
@@ -47,19 +47,19 @@ export class Invariants {
     return { ok: true };
   }
 
-  /** Batch check — evaluate all invariants for an operation before commit */
+  /** Batch check — evaluate all invariants for an operation before commit 
   async validateOperation(operation: WineryOperation): Promise<ValidationResult[]> {
     const results: ValidationResult[] = [];
     results.push(this.assertVolumeBalance(operation));
 
     if (operation.outputs) {
       for (const outputRel of operation.outputs) {
-        const output = outputRel.to; // this is the actual ContainerState
+        const output = outputRel.to!; // this is the actual ContainerState
         results.push(this.assertSinglePredecessor(output));
         results.push(await this.assertSingleCurrentState(output.containerId));
       }
     }
 
     return results.filter(r => !r.ok);
-  }
+  }*/
 }

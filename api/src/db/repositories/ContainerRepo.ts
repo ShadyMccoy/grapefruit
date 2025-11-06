@@ -3,22 +3,26 @@ import { Session } from "neo4j-driver";
 import { Container } from "../../domain/nodes/Container";
 
 export class ContainerRepo {
-  constructor(private session: Session) {}
+  constructor(private session: Session) { }
 
   async create(container: Container): Promise<void> {
     await this.session.run(
-      `
-      CREATE (c:Container {
-        id: $id,
-        name: $name,
-        type: $type,
-        capacityLiters: $capacityLiters,
-        tenantId: $tenantId,
-        createdAt: datetime($createdAt)
-      })
-      `,
-      container
+        `
+        CREATE (c:Container {
+          id: $id,
+          name: $name,
+          type: $type,
+          capacityLiters: $capacityLiters,
+          tenantId: $tenantId,
+          createdAt: datetime($createdAt)
+        })
+        `,
+      {
+        ...container,
+        createdAt: container.createdAt.toISOString()
+      }
     );
+
   }
 
   async findById(id: string): Promise<Container | null> {

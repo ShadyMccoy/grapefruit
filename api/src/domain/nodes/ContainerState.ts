@@ -1,14 +1,10 @@
 import { BaseNode } from "./BaseNode";
-
-export interface Composition {
-  [component: string]: number; // e.g. { cabernet: 0.7, merlot: 0.3 }
-}
+import { Container } from "./Container";
 
 export interface ContainerState extends BaseNode {
-  containerId: string;         
-  volumeLiters: number;        
-  composition: Composition;    
-  timestamp: Date;             
-  isCurrent: boolean;          
-  isInitial?: boolean;         
+  container: Container;
+  volumeLiters: number;
+  composition: Record<string, number>;
+  timestamp: Date;
+  tenantId: string;
 }
