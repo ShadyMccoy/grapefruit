@@ -12,7 +12,7 @@ export class ContainerRepo {
           id: $id,
           name: $name,
           type: $type,
-          capacityLiters: $capacityLiters,
+          capacityHUnits: $capacityHUnits,
           tenantId: $tenantId,
           createdAt: datetime($createdAt)
         })

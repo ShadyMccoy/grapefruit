@@ -6,7 +6,9 @@ export type OperationType =
   | "blend"
   | "bottle"
   | "loss"
-  | "adjustment";
+  | "adjustment"
+  | "press"
+  | "gain";
 
 export interface WineryOperation extends BaseNode {
   type: OperationType;

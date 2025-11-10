@@ -1,12 +1,12 @@
 // src/domain/relationships/WineryOpRelationships.ts
-import { ContainerState } from "../nodes/ContainerState";
+import { ContainerState, Composition } from "../nodes/ContainerState";
 
 // FLOW_TO relationship properties
 export interface FlowToProps {
   qty: number;          // quantity flowing
-  unit: "L" | "gal";
+  unit: "gal" | "lbs" | "$";
   deltaTime?: number;   // ΔT in seconds or minutes
-  composition?: Record<string, number>; // varietal breakdown, etc.
+  composition?: Composition; // varietal breakdown, etc.
 }
 
 export interface FlowToRelationship {

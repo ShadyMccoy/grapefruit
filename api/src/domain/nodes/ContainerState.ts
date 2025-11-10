@@ -3,7 +3,14 @@ import { Container } from "./Container";
 
 export interface ContainerState extends BaseNode {
   container: Container;
-  volumeLiters: number;
-  composition: Record<string, number>;
+  qty: number; // Quantity in h-units (1 h-unit = 1/10,000 unit)
+  unit: "gal" | "lbs" | "$"; // Unit of measure
+  composition: Composition;
   timestamp: Date;
+}
+
+export interface Composition {
+  varietals?: Record<string, number>; // e.g., { "chardonnay": 0.5, "pinot": 0.5 }
+  realDollars?: number;
+  nominalDollars?: number;
 }

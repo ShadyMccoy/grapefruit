@@ -1,6 +1,7 @@
 // db/repositories/ContainerStateRepo.ts
 import { Session } from "neo4j-driver";
 import { ContainerState } from "../../domain/nodes/ContainerState";
+import { Container } from "../../domain/nodes/Container";
 
 export class ContainerStateRepo {
   constructor(private session: Session) {}
@@ -10,20 +11,23 @@ export class ContainerStateRepo {
       `
       CREATE (s:ContainerState {
         id: $id,
-        containerId: $containerId,
-        operationId: $operationId,
-        previousStateId: $previousStateId,
-        volumeLiters: $volumeLiters,
+        qty: $qty,
+        unit: $unit,
         composition: $composition,
         timestamp: datetime($timestamp),
         tenantId: $tenantId,
-        isCurrent: $isCurrent,
-        isInitial: $isInitial
-      })
+        createdAt: datetime($createdAt)
+      })-[:STATE_OF]->(:Container {id: $containerId})
       `,
       {
-        ...state,
+        id: state.id,
+        qty: state.qty,
+        unit: state.unit,
+        composition: state.composition,
         timestamp: state.timestamp.toISOString(),
+        tenantId: state.tenantId,
+        createdAt: state.createdAt.toISOString(),
+        containerId: state.container.id,
       }
     );
   }
@@ -31,15 +35,22 @@ export class ContainerStateRepo {
   async findCurrentByContainer(containerId: string): Promise<ContainerState[]> {
     const result = await this.session.run(
       `
-      MATCH (s:ContainerState {containerId: $containerId, isCurrent: true})
-      RETURN s
+      MATCH (s:ContainerState)-[:STATE_OF]->(c:Container {id: $containerId})
+      WHERE s.isCurrent = true
+      RETURN s, c
       `,
       { containerId }
     );
 
     return result.records.map(r => {
       const s = r.get("s").properties;
-      return { ...s, timestamp: new Date(s.timestamp) } as ContainerState;
+      const c = r.get("c").properties;
+      return {
+        ...s,
+        timestamp: new Date(s.timestamp),
+        createdAt: new Date(s.createdAt),
+        container: { ...c, createdAt: new Date(c.createdAt) } as Container
+      } as ContainerState;
     });
   }
 }

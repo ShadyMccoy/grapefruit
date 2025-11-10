@@ -10,7 +10,7 @@ It is the canonical reference for reasoning about truth, lineage, balance, and t
 Grapefruit represents the winery as a **directed acyclic graph (DAG)**:
 
 - **Nodes:** containers, states, operations, and observations.  
-- **Edges:** flows of volume and composition over time (ΔT), and ownership/lineage relationships.  
+- **Edges:** flows of quantity and composition over time (ΔT), and ownership/lineage relationships.  
 
 Each node and edge encodes **physical transformations, monetary flow, and traceability**.
 
@@ -22,7 +22,7 @@ Each node and edge encodes **physical transformations, monetary flow, and tracea
 |------|--------------|
 | **Tenant** | Logical boundary for multi-winery support. |
 | **Container** | Physical or virtual vessel (tank, barrel, bottle, gain/loss, loss). |
-| **ContainerState** | Immutable snapshot of a container’s contents at an absolute timestamp T. Holds volume, composition, and metadata. |
+| **ContainerState** | Immutable snapshot of a container’s contents at an absolute timestamp T. Holds quantity, unit, composition (including varietals, real/nominal dollars), and metadata. |
 | **Operation** | Transformation consuming input states and producing output states. Contains metadata about the operation. |
 | **Observation** | Optional measurement or correction associated with a container state. |
 | **CurrentState** | Special node representing the live state of a container. Updated daily, timestamp = now. |
@@ -34,7 +34,7 @@ Each node and edge encodes **physical transformations, monetary flow, and tracea
 | Relationship | Direction | Description |
 |---------------|------------|--------------|
 | `STATE_OF` | `ContainerState → Container` | Links a state to its container. |
-| `FLOW_TO` | `ContainerState → ContainerState` | Represents movement of volume/composition with ΔT. Sum of outgoing relationships = 0 (except virtual L). |
+| `FLOW_TO` | `ContainerState → ContainerState` | Represents movement of quantity/composition with ΔT. Sum of outgoing relationships = 0 (except virtual L). |
 | `OBSERVATION_OF` | `Observation → ContainerState` | Links measurements or corrections. |
 | `OWNED_BY` | `* → Tenant` | Associates nodes with their owning tenant. |
 | `CURRENT_STATE` | `Container → ContainerState` | Pointer to the live state; ΔT of incoming flows updated daily. |
@@ -46,8 +46,8 @@ Each node and edge encodes **physical transformations, monetary flow, and tracea
 
 ## 🧮 Invariants
 
-1. **Conservation of Volume**  
-   - `Σ input.volume = Σ output.volume ± explicit losses`
+1. **Conservation of Quantity**  
+   - `Σ input.qty = Σ output.qty ± explicit losses`
 2. **Lineage Continuity**  
    - Each `ContainerState` has exactly one predecessor (except initial states).
 3. **Single Current State per Container**  
@@ -85,7 +85,7 @@ Each Operation will point to several container states:
 
 Each of the input container states:
 1. Has outgoing FLOW_TO relationships to the output or Loss container states
-2. Outgoing flow relationships "compositions" add up to the  from container state
+2. Outgoing flow relationships "compositions" add up to the from container state
 3. Conversely, the output container states all have at least one relationship to the input state
 4. The new composition (container state) of the input state A(n) = A(n-1) + Sum(incoming FLOW_TO)
 

@@ -1,13 +1,13 @@
 import { driver } from "../neo4jDriver";
 import { WineryOperation } from "../../domain/nodes/WineryOperation";
-import { FlowToRelationship } from "../../domain/relationships/Movement";
-import { ContainerState } from "../../domain/nodes/ContainerState";
+import { FlowToRelationship } from "../../domain/relationships/Flow_to";
+import { ContainerState, Composition } from "../../domain/nodes/ContainerState";
 
 export class WineryOperationRepo {
   static async createOperation(
     op: WineryOperation,
     inputStateIds: string[],
-    outputStates: { containerId: string; stateId: string; volumeLiters: number; composition?: Record<string, number> }[],
+    outputStates: { containerId: string; stateId: string; qty: number; unit: "gal" | "lbs"; composition?: Composition }[],
     flows: FlowToRelationship[]
   ): Promise<string> {
     const session = driver.session();
@@ -36,7 +36,8 @@ export class WineryOperationRepo {
           MATCH (c:Container {id: out.containerId})
           CREATE (stateOut:ContainerState {
             id: out.stateId,
-            volumeLiters: out.volumeLiters,
+            qty: out.qty,
+            unit: out.unit,
             composition: out.composition,
             timestamp: datetime()
           })

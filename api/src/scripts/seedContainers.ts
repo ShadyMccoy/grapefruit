@@ -11,10 +11,11 @@ async function main() {
     const repo = new ContainerRepo(session);
 
     const containers: Container[] = [
-      { id: "tank1", name: "Tank 1", type: "tank", capacityLiters: 1000, tenantId: "winery1", createdAt: new Date() },
-      { id: "tank2", name: "Tank 2", type: "tank", capacityLiters: 800, tenantId: "winery1", createdAt: new Date() },
-      { id: "barrelA", name: "Barrel A", type: "barrel", capacityLiters: 225, tenantId: "winery1", createdAt: new Date() },
-      { id: "barrelB", name: "Barrel B", type: "barrel", capacityLiters: 225, tenantId: "winery1", createdAt: new Date() },
+      { id: "tank1", name: "Tank 1", type: "tank", capacityHUnits: 2641720, tenantId: "winery1", createdAt: new Date() },
+      { id: "tank2", name: "Tank 2", type: "tank", capacityHUnits: 2113376, tenantId: "winery1", createdAt: new Date() },
+      { id: "barrelA", name: "Barrel A", type: "barrel", capacityHUnits: 594156, tenantId: "winery1", createdAt: new Date() },
+      { id: "barrelB", name: "Barrel B", type: "barrel", capacityHUnits: 594156, tenantId: "winery1", createdAt: new Date() },
+      { id: "loss1", name: "Loss Container", type: "loss", tenantId: "winery1", createdAt: new Date() }, // Virtual container for losses
     ];
 
     for (const c of containers) {
