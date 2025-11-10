@@ -35,38 +35,44 @@ This pipes the 01-starter-data.cypher file in neo4j as a Cypher command:
 ```powershell
 Get-Content .\docker-init\01-starter-data.cypher | docker compose exec -T neo4j cypher-shell -u neo4j -p testpassword
 ```
-3. Seed Containers via TypeScript
 
-After the database is running, you can seed containers with your TypeScript script:
+## 3. Seed Comprehensive Test Data
 
-```powershell
-npx tsx src/scripts/seedContainers.ts
-```
-
-This will create initial Container nodes (tanks, barrels, presses, bottles) in Neo4j.
-
-4. Create Example Winery Operations
-
-You can run the fake operations script to generate example WineryOperation nodes and relationships:
-
+Load comprehensive starter data for testing and validation:
 
 ```powershell
-npx tsx src/scripts/testWineryOperations.ts
+cd api
+npx tsx src/scripts/seedAll.ts
 ```
 
-This will:
+This creates a "kitchen sink" dataset with:
+- Containers (tanks, barrels, loss containers)
+- Initial container states with quantities and compositions
+- Sample operations (blends, transfers) with proper relationships
 
-Create a WineryOperation node (e.g., a blend)
+## 4. Additional Testing
 
-Connect preseeded container states as inputs (WINERY_OP_INPUT)
+For additional operation testing or specific scenarios:
 
-Create new container states as outputs (WINERY_OP_OUTPUT)
+```powershell
+npx tsx src/scripts/testWineryOperation.ts  # Additional operation creation
+```
 
-Link all states to their containers via STATE_OF
+## 5. Query and Visualize
 
-You can now query the graph in Neo4j to see lineage and trace material flow:
+Access the Neo4j Browser at `http://localhost:7474` (auth: `neo4j/testpassword`) for graph queries and visualization.
+
+Example query to view operation lineage:
 
 ```cypher
-MATCH (c:Container)-[:STATE_OF]->(s:ContainerState)<-[r:WINERY_OP_OUTPUT]-(op:WineryOperation)
-RETURN c, s, r, op
+MATCH (c:Container)-[:STATE_OF]->(s:ContainerState)<-[:WINERY_OP_OUTPUT]-(op:WineryOperation)
+RETURN c, s, op
+```
+
+Trace container history:
+
+```cypher
+MATCH path = (initial:ContainerState)-[:FLOW_TO*]->(current:ContainerState)
+WHERE NOT (initial)<-[:FLOW_TO]-()
+RETURN path
 ```
