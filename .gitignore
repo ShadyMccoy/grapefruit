@@ -27,3 +27,8 @@ Thumbs.db
 
 # Misc
 *.log
+
+# NPM lockfiles
+# Ignore lockfiles across the repo; we use floating semver and deterministic scripts instead
+package-lock.json
+npm-shrinkwrap.json

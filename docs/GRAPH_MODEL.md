@@ -1,14 +1,18 @@
 # 🍇 Grapefruit Graph Model
 
-This document defines the **ontology**, **relationships**, and **invariants** that make up Grapefruit’s core data model.  
-It is the **canonical reference** for reasoning about truth, lineage, and balance within the winery graph.
+This document defines the **ontology**, **relationships**, **invariants**, and **temporal mechanics** of Grapefruit’s winery graph.  
+It is the canonical reference for reasoning about truth, lineage, balance, and time in winemaking operations.
 
 ---
 
 ## 🧭 Overview
 
-Grapefruit represents the winery as a **directed acyclic graph (DAG)** of containers and operations.  
-Every node and relationship encodes **physical transformations**, **monetary flow**, and **traceability**.
+Grapefruit represents the winery as a **directed acyclic graph (DAG)**:
+
+- **Nodes:** containers, states, operations, and observations.  
+- **Edges:** flows of volume and composition over time (ΔT), and ownership/lineage relationships.  
+
+Each node and edge encodes **physical transformations, monetary flow, and traceability**.
 
 ---
 
@@ -16,11 +20,12 @@ Every node and relationship encodes **physical transformations**, **monetary flo
 
 | Node | Description |
 |------|--------------|
-| **Tenant** | Logical boundary for data isolation (multi-winery support). |
+| **Tenant** | Logical boundary for multi-winery support. |
 | **Container** | Physical or virtual vessel (tank, barrel, bottle, gain/loss, loss). |
-| **ContainerState** | Snapshot of a container’s contents at a point in time. Immutable and versioned. |
-| **Operation** | Transformation consuming input states and producing output states (transfer, blend, bottling). |
+| **ContainerState** | Immutable snapshot of a container’s contents at an absolute timestamp T. Holds volume, composition, and metadata. |
+| **Operation** | Transformation consuming input states and producing output states. Contains metadata about the operation. |
 | **Observation** | Optional measurement or correction associated with a container state. |
+| **CurrentState** | Special node representing the live state of a container. Updated daily, timestamp = now. |
 
 ---
 
@@ -29,10 +34,10 @@ Every node and relationship encodes **physical transformations**, **monetary flo
 | Relationship | Direction | Description |
 |---------------|------------|--------------|
 | `STATE_OF` | `ContainerState → Container` | Links a state to its container. |
-| `WINERY_OP_INPUT` | `ContainerState → Operation` | Defines the inputs to an operation. |
-| `WINERY_OP_OUTPUT` | `Operation → ContainerState` | Defines the outputs from an operation. |
+| `FLOW_TO` | `ContainerState → ContainerState` | Represents movement of volume/composition with ΔT. Sum of outgoing relationships = 0 (except virtual L). |
 | `OBSERVATION_OF` | `Observation → ContainerState` | Links measurements or corrections. |
 | `OWNED_BY` | `* → Tenant` | Associates nodes with their owning tenant. |
+| `CURRENT_STATE` | `Container → ContainerState` | Pointer to the live state; ΔT of incoming flows updated daily. |
 
 ---
 
@@ -59,21 +64,30 @@ Every node and relationship encodes **physical transformations**, **monetary flo
 - Captures observed discrepancies or small corrections.
 - Adds **nominal dollars** but no **real dollars**.
 - Treated as a first-class container in the graph.
-
-### **LossContainer**
 - Represents physical losses (evaporation, spoilage, spills).
 - Reduces **real dollars**, preserves **nominal dollars**.
-- Modeled as a negative input to an operation.
+- Allows negative flows for gains
 
 ---
 
 ## 🧩 Algebraic Model
 
-Each operation enforces balance:
+Each Operation will point to several container states:
 
-Σ(inputs.volume) + Σ(gains) - Σ(losses) = Σ(outputs.volume)
-Σ(inputs.nominal) = Σ(outputs.nominal)
-Σ(inputs.real) - Σ(losses.real) = Σ(outputs.real)
+1. Each **input** container state.
+  for example for container A, represent the container state A(n)
+2. A corresponding **output** container state
+  A(n+1)
+3. Potentially a Loss container L
+
+Each of the input container states:
+1. Has outgoing FLOW_TO relationships to the output or Loss container states
+2. Outgoing flow relationships "compositions" add up to the  from container state
+3. Conversely, the output container states all have at least one relationship to the input state
+4. The new composition (container state) of the input state A(n) = A(n-1) + Sum(incoming FLOW_TO)
+
+Loss container is excempt from the restrictions and may be unbalanced during an operation.
+The incoming flow_to break down specifically on which containers the losses (or gains, represented as negative losses) are recorded; either pre or post op, and the composition of the relationship matches the from container for pre-losses, and the to-state on post-losses.
 
 ---
 
