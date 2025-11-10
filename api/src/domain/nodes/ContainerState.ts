@@ -6,5 +6,4 @@ export interface ContainerState extends BaseNode {
   volumeLiters: number;
   composition: Record<string, number>;
   timestamp: Date;
-  tenantId: string;
 }

@@ -15,8 +15,11 @@ export class WineryOperationRepo {
         const result = await tx.run(
           `
           CREATE (op:WineryOperation {
+            id: $id,
             type: $type,
-            description: $description
+            description: $description,
+            tenantId: $tenantId,
+            createdAt: datetime($createdAt)
           })
           WITH op
 
@@ -47,8 +50,11 @@ export class WineryOperationRepo {
           RETURN id(op) AS opId
           `,
           {
+            id: op.id,
             type: op.type,
             description: op.description ?? null,
+            tenantId: op.tenantId,
+            createdAt: op.createdAt.toISOString(),
             inputs: inputs.map((i) => ({
               fromId: i.from.id,
               qty: i.properties.qty,

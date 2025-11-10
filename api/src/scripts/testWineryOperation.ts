@@ -2,6 +2,7 @@
 import { getDriver } from "../db/client";
 import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
 import { WineryOpInput, WineryOpOutput } from "../domain/relationships/Movement";
+import { randomUUID } from "crypto";
 
 async function main() {
   const driver = getDriver();
@@ -26,7 +27,7 @@ async function main() {
 
     // Create operation
     const opId = await WineryOperationRepo.createOperation(
-      { type: "blend", description: "Fake blend operation" },
+      { id: randomUUID(), tenantId: 'default', createdAt: new Date(), type: "blend", description: "Fake blend operation" },
       inputs,
       outputs
     );
