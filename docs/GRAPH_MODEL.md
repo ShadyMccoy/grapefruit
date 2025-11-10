@@ -21,9 +21,9 @@ Each node and edge encodes **physical transformations, monetary flow, and tracea
 | Node | Description |
 |------|--------------|
 | **Tenant** | Logical boundary for multi-winery support. |
-| **Container** | Physical or virtual vessel (tank, barrel, bottle, gain/loss, loss). |
-| **ContainerState** | Immutable snapshot of a container’s contents at an absolute timestamp T. Holds quantity, unit, composition (including varietals, real/nominal dollars), and metadata. |
-| **Operation** | Transformation consuming input states and producing output states. Contains metadata about the operation. |
+| **Container** | Physical or virtual vessel (tank, barrel, press, bottle, loss). |
+| **ContainerState** | Immutable snapshot of a container’s contents at an absolute timestamp T. Holds qty (in h-units), unit, composition (varietals, real/nominal dollars), and metadata. |
+| **WineryOperation** | Transformation consuming input states and producing output states. Contains metadata about the operation. |
 | **Observation** | Optional measurement or correction associated with a container state. |
 | **CurrentState** | Special node representing the live state of a container. Updated daily, timestamp = now. |
 
@@ -38,9 +38,9 @@ Each node and edge encodes **physical transformations, monetary flow, and tracea
 | `OBSERVATION_OF` | `Observation → ContainerState` | Links measurements or corrections. |
 | `OWNED_BY` | `* → Tenant` | Associates nodes with their owning tenant. |
 | `CURRENT_STATE` | `Container → ContainerState` | Pointer to the live state; ΔT of incoming flows updated daily. |
-| `OP_RELATED_STATE_IN` | `Operation → ContainerState` | Links operation to input states. |
-| `OP_RELATED_STATE_OUT` | `Operation → ContainerState` | Links operation to output states. |
-| `OPERATION_LOSS` | `Operation → ContainerState` | Links operation to loss/gain states. |
+| `WINERY_OP_INPUT` | `WineryOperation → ContainerState` | Links operation to input states. |
+| `WINERY_OP_OUTPUT` | `WineryOperation → ContainerState` | Links operation to output states. |
+| `OPERATION_LOSS` | `WineryOperation → ContainerState` | Links operation to loss/gain states. |
 
 ---
 
@@ -75,7 +75,7 @@ Each node and edge encodes **physical transformations, monetary flow, and tracea
 
 ## 🧩 Algebraic Model
 
-Each Operation will point to several container states:
+Each WineryOperation will point to several container states:
 
 1. Each **input** container state.
   for example for container A, represent the container state A(n)
@@ -89,7 +89,7 @@ Each of the input container states:
 3. Conversely, the output container states all have at least one relationship to the input state
 4. The new composition (container state) of the input state A(n) = A(n-1) + Sum(incoming FLOW_TO)
 
-Loss container is excempt from the restrictions and may be unbalanced during an operation.
+Loss container is exempt from the restrictions and may be unbalanced during an operation.
 The incoming flow_to break down specifically on which containers the losses (or gains, represented as negative losses) are recorded; either pre or post op, and the composition of the relationship matches the from container for pre-losses, and the to-state on post-losses.
 
 ---
@@ -98,8 +98,8 @@ The incoming flow_to break down specifically on which containers the losses (or 
 
 (ContainerState)-[:STATE_OF]->(Container)
 (ContainerState)-[:FLOW_TO]->(ContainerState)
-(Operation)-[:OP_RELATED_STATE_IN]->(ContainerState)
-(Operation)-[:OP_RELATED_STATE_OUT]->(ContainerState)
-(Operation)-[:OPERATION_LOSS]->(ContainerState)
+(WineryOperation)-[:WINERY_OP_INPUT]->(ContainerState)
+(WineryOperation)-[:WINERY_OP_OUTPUT]->(ContainerState)
+(WineryOperation)-[:OPERATION_LOSS]->(ContainerState)
 (ContainerState)<-[:OBSERVATION_OF]-(Observation)
 (* )-[:OWNED_BY]->(Tenant)

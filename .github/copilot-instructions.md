@@ -1,29 +1,23 @@
 # Grapefruit Copilot Instructions
 
 ## Project Overview
-Grapefruit is a **winery traceability system** modeling the cellar as a **directed acyclic graph (DAG)** in Neo4j. Every container transformation produces **immutable states** with **mathematically enforced conservation** of volume, composition, and monetary values.
+Grapefruit is a **winery traceability system** modeling the cellar as a **directed acyclic graph (DAG)** in Neo4j. Every container transformation produces **immutable states** with **mathematically enforced conservation** of qty, composition, and monetary values.
 
 ## Critical Concepts
 
 ### Ontology (Truth Layer)
 - **Container**: Physical vessel (tank, barrel, press, bottle) or virtual (gain/loss, loss)
-- **ContainerState**: Immutable snapshot at timestamp T with volume, composition, real/nominal dollars
+- **ContainerState**: Immutable snapshot at timestamp T with qty, composition, real/nominal dollars
 - **WineryOperation**: Transformation consuming input states → producing output states
-- **FLOW_TO relationships**: Edges between states with ΔT (delta time)
+- **FLOW_TO relationships**: Edges between states with ΔT (delta time) and composition
 
 ### Dual-Dollar Accounting
 - **Real dollars**: Flow only with physical wine (affected by losses/evaporation)
 - **Nominal dollars**: Accounting value; must be conserved across all operations
-- **Loss containers**: Virtual containers for both gains (negative volumes) and losses (positive volumes); adjust real $ while preserving nominal $ conservation
+- **Loss containers**: Virtual containers for both gains (negative qtys) and losses (positive qtys); adjust real $ while preserving nominal $ conservation
 
-### Core Invariants (see `api/src/core/Invariants.ts`)
-1. Volume conservation: `Σ input.volume = Σ output.volume ± explicit losses`
-2. Single current state per container
-3. Lineage continuity: Each state has exactly one predecessor (except initial)
-4. Nominal dollar conservation across operations
-5. Immutability: States/operations are append-only
-
-**Note**: Invariants module is planned but implementation in flux. Logic currently commented out pending ontology finalization.
+### Invariants (see `api/src/core/Invariants.ts`)
+**Note**: Invariants module exists but logic is currently commented out pending ontology finalization. Focus on getting domain model right first.
 
 ## Architecture
 
@@ -65,13 +59,12 @@ docker compose up -d  # Starts Neo4j on ports 7474 (browser) and 7687 (bolt)
 
 ### Seed Database
 ```powershell
-# Load starter data (appellations, vineyards, varietals)
+# Load base data (appellations, vineyards, varietals)
 Get-Content .\docker-init\01-starter-data.cypher | docker compose exec -T neo4j cypher-shell -u neo4j -p testpassword
 
-# Seed containers via TypeScript
+# Seed comprehensive test data (containers, states, operations)
 cd api
-npx tsx src/scripts/seedContainers.ts
-npx tsx src/scripts/testWineryOperation.ts
+npx tsx src/scripts/seedAll.ts
 ```
 
 ### Run API Server
@@ -149,7 +142,7 @@ if (violations.length > 0) {
 - Testing operation workflows with scripts
 - Cleaning up type inconsistencies ("slop")
 - Repository pattern implementation
-- Invariants coming soon (currently commented out)
+- Invariants planned but currently commented out
 
 ## Common Patterns
 
@@ -191,11 +184,72 @@ const lossState = await stateRepo.getCurrentState(lossContainer.id);
 
 ## Anti-Patterns to Avoid
 - ❌ Mutating existing ContainerState nodes
-- ❌ Creating operations without checking invariants (once implemented)
-- ❌ Using floating-point arithmetic for volumes (use integer h-units: 1/10,000 gallon)
+- ❌ Creating operations without checking invariants (when implemented)
+- ❌ Using floating-point arithmetic for quantities (use integer h-units: 1/10,000 gallon or pound)
 - ❌ Introducing non-deterministic logic in repositories
 - ❌ Direct Cypher queries outside repositories
 - ❌ Assuming current code is final — model in flux, expect "slop" during ontology validation
 
-## AI Collaboration Notes
-When uncertain about ontology alignment, **ask or annotate assumptions** with `// Requires review:` comments. Schema changes require human approval. Prioritize precision over creativity — every contribution must strengthen auditability.
+## 🤖 AI Collaboration Guidelines
+
+Grapefruit is designed for **AI–human co-development**. This section defines how AI agents and human contributors should reason about, modify, and extend the system.
+
+### Purpose
+To ensure AI-generated code:
+- Preserves **truth invariants**
+- Matches **ontology terminology**
+- Produces **explainable, auditable** reasoning and code
+
+### Reasoning Hierarchy
+When generating or editing code, AI agents should reason in this order:
+
+1. **Graph Ontology** → (`docs/GRAPH_MODEL.md`)
+2. **Domain & Repositories** → (`docs/APPLICATION_LOGIC.md`)
+3. **Workflow Semantics** → (`docs/WORKFLOW_MODEL.md`)
+4. **Integration Logic** → API, ERP interfaces
+5. **Infrastructure** → Docker, environment, CI/CD
+
+Never modify code without checking alignment with these documents.
+
+### Coding Guidelines
+- Use **precise naming** from the ontology (Container, ContainerState, WineryOperation)
+- Always **explain intent** in comments — not just implementation
+- When uncertain, **ask or annotate** assumptions clearly
+- Do not introduce randomness, timestamps, or environmental variance
+- Maintain **determinism** across all generated functions
+- Use h-units for quantities (integer precision)
+- Include dual-dollar accounting in compositions
+
+### Commenting Convention
+```ts
+// Intent: Create new ContainerState preserving qty and nominal balance
+// Reasoning: Inputs validated; lineage preserved; invariant check planned but not yet enforced
+```
+
+AI collaborators must leave these "intent" comments for human reviewers.
+
+### Human Oversight
+All schema or ontology changes require human review and approval.
+
+AI may propose modifications but must flag them as `// Suggestion:` or `// Requires review:`.
+
+Merge actions should only occur after validation of balance and lineage logic.
+
+### Example: Good AI Contribution
+```ts
+// Intent: Implement Loss container adjustment during blend operations
+// Suggestion: Include loss container in operation inputs for evaporation tracking
+// Requires review: Verify loss handling logic aligns with dual-dollar accounting
+
+const lossContainer = await ContainerRepo.findByType('loss');
+const lossState = await ContainerStateRepo.findById(lossContainer.id); // Current loss state
+const opId = await WineryOperationRepo.createOperation(
+  { id: 'blendOp', tenantId: 'winery1', createdAt: new Date(), type: 'blend', description: 'Blend with loss adjustment' },
+  ['inputState1', 'inputState2', lossState.id], // Include loss as input
+  [{ containerId: 'outputTank', stateId: 'newState', qty: 195, unit: 'gal', composition: { realDollars: 950, nominalDollars: 1000 } }], // Adjusted for 5 gal loss
+  [] // flows
+);
+```
+
+### Goal
+AI collaboration in Grapefruit should amplify precision, not creativity. Every contribution must strengthen auditability.

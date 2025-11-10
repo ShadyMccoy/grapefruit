@@ -2,7 +2,7 @@
 
 **Grapefruit** provides wineries with **auditable, time-resolved traceability** for every tank, barrel, and bottling — built for seamless ERP integration.
 
-It models the winery as a **directed graph of containers and operations**, where every transformation produces **immutable container states**. This allows the full production history to be reconstructed at any point in time, with **mathematically guaranteed conservation** of volume, composition, and monetary values.
+It models the winery as a **directed graph of containers and operations**, where every transformation produces **immutable container states**. This allows the full production history to be reconstructed at any point in time, with **mathematically guaranteed conservation** of qty, composition, and monetary values.
 
 ---
 
@@ -11,7 +11,7 @@ It models the winery as a **directed graph of containers and operations**, where
 | Concept | Purpose |
 |----------|----------|
 | **Container** | Physical or virtual vessel (tank, barrel, press, loss, gain). |
-| **ContainerState** | Snapshot of a container’s contents at a point in time, including volume and composition. Immutable and versioned. |
+| **ContainerState** | Snapshot of a container's contents at a point in time, including qty and composition. Immutable and versioned. |
 | **Operation** | Transformation consuming input states and producing output states (transfer, blend, bottle). |
 | **Snapshot** | The reconstructed winery state at a given moment. |
 | **Tenant** | Logical owner for multi-winery environments. |
@@ -28,7 +28,7 @@ Grapefruit provides a **single source of truth** for material flow, blends, and 
 4. **Determinism** — Identical inputs always produce identical outputs.  
 5. **Composability** — Complex operations built from smaller primitives.  
 6. **Separation of Concerns** — Truth layer, workflow layer, and integration layer remain independent.  
-7. **Quantized Precision** — Work in integer h-units (1 h-unit ≈ 1/10,000 gallon) to eliminate floating-point drift while capturing meaningful physical units (grapes).
+7. **Quantized Precision** — Work in integer h-units (1 h-unit ≈ 1/10,000 gallon or pound) to eliminate floating-point drift while capturing meaningful physical units.
 
 ---
 
@@ -48,9 +48,9 @@ Grapefruit provides a **single source of truth** for material flow, blends, and 
 
 | Layer | Responsibility |
 |-------|----------------|
-| **Domain Layer** | Typed, immutable “truth objects” (`Container`, `ContainerState`, `Operation`). |
+| **Domain Layer** | Typed, immutable "truth objects" (`Container`, `ContainerState`, `WineryOperation`). |
 | **Repository Layer** | Typed interface to Neo4j. Encapsulates queries and session handling. |
-| **Invariants Module** | Enforces mathematical truths (volume balance, single current state, lineage continuity, composition conservation). |
+| **Invariants Module** | Enforces mathematical truths (qty balance, single current state, lineage continuity, composition conservation). |
 | **API Layer** | Exposes REST or GraphQL endpoints for integrations and UI. |
 
 This layered structure ensures **compile-time safety** (via TypeScript) and **runtime integrity** (via invariants).
@@ -60,11 +60,11 @@ This layered structure ensures **compile-time safety** (via TypeScript) and **ru
 ## 🧮 The Winery Graph
 
 All operations are modeled as **mixes**:  
-`N inputs → M outputs`, where inputs can include **physical containers**, **Gain/Loss containers**, or **LossContainers**.
+`N inputs → M outputs`, where inputs can include **physical containers**, **Gain/Loss containers**, or **Loss containers**.
 
-- **Volume, composition, and nominal dollars are conserved.**  
+- **Qty, composition, and nominal dollars are conserved.**  
 - **Real dollars** flow only with physical wine.  
-- **Gain/Loss** containers capture discrepancies or physical losses.  
+- **Loss containers** capture discrepancies or physical losses.
 
 Each operation produces new container states and optionally a virtual L node, creating a permanent, auditable record of truth.
 
@@ -77,8 +77,8 @@ Each operation produces new container states and optionally a virtual L node, cr
 | [`docs/GRAPH_MODEL.md`](./docs/GRAPH_MODEL.md) | Ontology and graph structure (nodes, relationships, invariants). |
 | [`docs/APPLICATION_LOGIC.md`](./docs/APPLICATION_LOGIC.md) | Domain layer, repository design, and invariants. |
 | [`docs/WORKFLOW_MODEL.md`](./docs/WORKFLOW_MODEL.md) | Mapping real-world operations (transfers, blends, bottling) to graph transformations. |
-| [`docs/AI_COLLABORATION.md`](./docs/AI_COLLABORATION.md) | Guidelines for AI-assisted code generation and schema reasoning. |
 | [`docs/ROADMAP.md`](./docs/ROADMAP.md) | Development roadmap and milestone tracking. |
+| [`.github/copilot-instructions.md`](./.github/copilot-instructions.md) | AI collaboration guidelines and project reasoning hierarchy. |
 ---
 
 ## ⚗️ Current Phase

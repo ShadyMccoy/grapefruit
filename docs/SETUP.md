@@ -52,11 +52,7 @@ This creates a "kitchen sink" dataset with:
 
 ## 4. Additional Testing
 
-For additional operation testing or specific scenarios:
-
-```powershell
-npx tsx src/scripts/testWineryOperation.ts  # Additional operation creation
-```
+For additional operation testing or specific scenarios, create new scripts following the pattern in `seedAll.ts`.
 
 ## 5. Query and Visualize
 

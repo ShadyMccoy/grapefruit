@@ -6,19 +6,26 @@ This document tracks major milestones and planned phases of Grapefruit’s devel
 
 ## ✅ Completed
 
-- [x] Core ontology: Containers, States, Operations  
-- [x] Neo4j connectivity via TypeScript driver  
-- [x] Basic invariant definitions (volume, lineage, immutability)
+- [x] Core ontology: Containers, States, WineryOperations
+- [x] Neo4j connectivity via TypeScript driver
+- [x] Basic invariant definitions (qty, lineage, immutability)
+- [x] Repository pattern implementation
+- [x] Dual-dollar accounting model
+- [x] H-units for precision (1/10,000 gallon/pound)
+- [x] Comprehensive seeding infrastructure
 
 ---
 
-## 🚧 In Progress: Ontology Validation Phase
+## 🚧 Current Phase: Ontology Validation
 
-**Goal:** Validate the correctness of the graph model and dual-dollar algebra.  
+**Goal:** Validate the correctness of the graph model and dual-dollar algebra.
+**Status:** In progress - domain model solidified, testing infrastructure ready.
+
 Focus:
-- Create and query operations in Neo4j
-- Test volume and dollar conservation
-- Implement simple “Hello World” operations (transfer, blend)
+- Execute operations in Neo4j with proper relationships
+- Test qty and dollar conservation
+- Validate lineage and immutability
+- Refine invariants before full enforcement
 
 ---
 

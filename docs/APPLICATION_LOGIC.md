@@ -1,6 +1,6 @@
 # ⚙️ Application Logic Specification
 
-This document describes how Grapefruit’s **domain logic**, **repositories**, and **invariants** translate the winery ontology into executable code.  
+This document describes how Grapefruit's **domain logic**, **repositories**, and **invariants** translate the winery ontology into executable code.  
 It is intended for developers and AI collaborators implementing or reasoning about the backend.
 
 ---
@@ -9,7 +9,7 @@ It is intended for developers and AI collaborators implementing or reasoning abo
 
 | Layer | Responsibility |
 |-------|----------------|
-| **Domain Layer** | Defines canonical “truth objects” in TypeScript. Immutable and typed. |
+| **Domain Layer** | Defines canonical "truth objects" in TypeScript. Immutable and typed. |
 | **Repository Layer** | Provides typed interfaces between domain objects and Neo4j. |
 | **Invariants Module** | Enforces runtime integrity before mutations commit. |
 | **Service Layer** | Composes repositories, applies invariants, and exposes APIs. |
@@ -18,111 +18,49 @@ It is intended for developers and AI collaborators implementing or reasoning abo
 
 ## 🧠 Domain Layer
 
-All entities in Grapefruit are strongly typed interfaces.
+All entities in Grapefruit are strongly typed interfaces extending `BaseNode`. See `api/src/domain/nodes/` for actual implementations.
 
-### Example Interfaces
+Key concepts:
+- **Container**: Physical/virtual vessels with type and capacity in h-units
+- **ContainerState**: Immutable snapshots with qty, unit, composition (varietals, dual dollars)
+- **WineryOperation**: Transformations linking input/output states via relationships
 
-```ts
-interface BaseNode {
-  id: string;
-  tenantId: string;
-  createdAt: Date;
-}
+---
 
-interface Container extends BaseNode {
-  name: string;
-  type: 'tank' | 'barrel' | 'press' | 'gainLoss' | 'loss';
-  capacity: number;
-}
+## 🗂️ Repository Layer
 
-interface ContainerState extends BaseNode {
-  containerId: string;
-  volume: number;
-  nominalDollars: number;
-  realDollars: number;
-  predecessorId?: string;
-}
+Repositories abstract Cypher queries behind typed interfaces. See `api/src/db/repositories/` for implementations.
 
-interface Operation extends BaseNode {
-  type: 'transfer' | 'blend' | 'bottle' | 'adjustment';
-  operator?: string;
-  workOrderId?: string;
-  metadata?: Record<string, any>;
-}
-```
+| Repository | Purpose |
+|------------|---------|
+| ContainerRepo | Container CRUD operations |
+| ContainerStateRepo | State management and queries |
+| WineryOperationRepo | Operation creation with relationships |
 
-### Repository Layer
+---
 
-Repositories abstract Cypher queries behind typed interfaces.
+## 🔒 Invariants Module
 
-Repository	Key Functions
-ContainerRepo	create(), findById(), listByTenant()
-ContainerStateRepo	createState(), getCurrentState(), findHistory()
-OperationRepo	createOperation(), findById(), listByType()
+**Status**: Currently commented out during ontology validation. Implementation planned.
 
-Example snippet:
+When active, will enforce:
+- Quantity and nominal dollar conservation
+- Single current state per container
+- Lineage continuity
+- No orphaned operations/states
 
-const op = await OperationRepo.createOperation({
-  type: 'blend',
-  inputs: [stateA, stateB],
-  outputs: [newState],
-});
+See `api/src/core/Invariants.ts` for details.
 
-## Invariants Module
+---
 
-Before committing any write, invariants are enforced.
+## 🔧 Service Layer
 
-Core Checks
+Composes repositories for business operations. Ensures invariants are checked before commits.
 
-BalanceInvariant — Volume and nominal dollars conserved.
+Key principles:
+- Deterministic operations (identical inputs → identical results)
+- No randomness or external variance
+- TypeScript compile-time safety
+- Invariant runtime validation (when implemented)
 
-LineageInvariant — Each state has one predecessor.
-
-UniquenessInvariant — One current state per container.
-
-IntegrityInvariant — No orphaned operations or states.
-
-Violations should throw typed errors (e.g., InvariantViolationError).
-
-## Service Layer Example
-
-Pseudocode for a simple blend operation:
-
-```
-async function performBlend(inputs: string[], outputContainerId: string) {
-  const inputStates = await stateRepo.getCurrentStates(inputs);
-  const totalVolume = sum(inputStates.map(s => s.volume));
-  const totalNominal = sum(inputStates.map(s => s.nominalDollars));
-  const totalReal = sum(inputStates.map(s => s.realDollars));
-
-  const newState = await stateRepo.createState({
-    containerId: outputContainerId,
-    volume: totalVolume,
-    nominalDollars: totalNominal,
-    realDollars: totalReal,
-    predecessorId: null,
-  });
-
-  const op = await opRepo.createOperation({
-    type: 'blend',
-    inputs: inputStates,
-    outputs: [newState],
-  });
-
-  await Invariants.checkBalance(op);
-  return op;
-}
-```
-
-### Type Safety and Determinism
-
-All operations are deterministic given identical inputs.
-
-Randomness, timestamps, and external context never alter graph results.
-
-TypeScript ensures compile-time correctness; invariants ensure runtime truth.
-
-### Goal
-
-This layer guarantees that application logic never violates truth —
-Neo4j is simply a persistence engine for the mathematically balanced domain.
+See `api/src/scripts/` for usage examples.
