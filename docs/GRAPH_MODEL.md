@@ -38,6 +38,9 @@ Each node and edge encodes **physical transformations, monetary flow, and tracea
 | `OBSERVATION_OF` | `Observation → ContainerState` | Links measurements or corrections. |
 | `OWNED_BY` | `* → Tenant` | Associates nodes with their owning tenant. |
 | `CURRENT_STATE` | `Container → ContainerState` | Pointer to the live state; ΔT of incoming flows updated daily. |
+| `OP_RELATED_STATE_IN` | `Operation → ContainerState` | Links operation to input states. |
+| `OP_RELATED_STATE_OUT` | `Operation → ContainerState` | Links operation to output states. |
+| `OPERATION_LOSS` | `Operation → ContainerState` | Links operation to loss/gain states. |
 
 ---
 
@@ -94,7 +97,9 @@ The incoming flow_to break down specifically on which containers the losses (or 
 ## 🕸️ Schema Visualization (Simplified)
 
 (ContainerState)-[:STATE_OF]->(Container)
-(ContainerState)-[:WINERY_OP_INPUT]->(Operation)
-(Operation)-[:WINERY_OP_OUTPUT]->(ContainerState)
+(ContainerState)-[:FLOW_TO]->(ContainerState)
+(Operation)-[:OP_RELATED_STATE_IN]->(ContainerState)
+(Operation)-[:OP_RELATED_STATE_OUT]->(ContainerState)
+(Operation)-[:OPERATION_LOSS]->(ContainerState)
 (ContainerState)<-[:OBSERVATION_OF]-(Observation)
 (* )-[:OWNED_BY]->(Tenant)

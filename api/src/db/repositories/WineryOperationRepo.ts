@@ -1,12 +1,14 @@
 import { driver } from "../neo4jDriver";
 import { WineryOperation } from "../../domain/nodes/WineryOperation";
-import { WineryOpInput, WineryOpOutput } from "../../domain/relationships/Movement";
+import { FlowToRelationship } from "../../domain/relationships/Movement";
+import { ContainerState } from "../../domain/nodes/ContainerState";
 
 export class WineryOperationRepo {
   static async createOperation(
     op: WineryOperation,
-    inputs: WineryOpInput[],
-    outputs: WineryOpOutput[]
+    inputStateIds: string[],
+    outputStates: { containerId: string; stateId: string; volumeLiters: number; composition?: Record<string, number> }[],
+    flows: FlowToRelationship[]
   ): Promise<string> {
     const session = driver.session();
 
@@ -23,29 +25,46 @@ export class WineryOperationRepo {
           })
           WITH op
 
-          // Unwind inputs
-          UNWIND $inputs AS inp
-          MATCH (state:ContainerState {id: inp.fromId})
-          CREATE (state)-[:WINERY_OP_INPUT {
-            qty: inp.qty,
-            unit: inp.unit,
-            description: inp.desc
-          }]->(op)
+          // Link operation to input states
+          UNWIND $inputStateIds AS inputId
+          MATCH (inputState:ContainerState {id: inputId})
+          CREATE (op)-[:OP_RELATED_STATE_IN]->(inputState)
 
           WITH op
-          UNWIND $outputs AS out
+          // Create output states and link to operation
+          UNWIND $outputStates AS out
           MATCH (c:Container {id: out.containerId})
           CREATE (stateOut:ContainerState {
             id: out.stateId,
-            volumeLiters: out.qty,
+            volumeLiters: out.volumeLiters,
             composition: out.composition,
             timestamp: datetime()
           })
           CREATE (stateOut)-[:STATE_OF]->(c)
-          CREATE (op)-[:WINERY_OP_OUTPUT {
-            qty: out.qty,
-            unit: out.unit
-          }]->(stateOut)
+          CALL {
+            WITH op, stateOut, c
+            WITH op, stateOut, c
+            WHERE c.type = 'loss'
+            CREATE (op)-[:OPERATION_LOSS]->(stateOut)
+          }
+          CALL {
+            WITH op, stateOut, c
+            WITH op, stateOut, c
+            WHERE c.type <> 'loss'
+            CREATE (op)-[:OP_RELATED_STATE_OUT]->(stateOut)
+          }
+
+          WITH op
+          // Create FLOW_TO relationships
+          UNWIND $flows AS flow
+          MATCH (fromState:ContainerState {id: flow.from.id})
+          MATCH (toState:ContainerState {id: flow.to.id})
+          CREATE (fromState)-[:FLOW_TO {
+            qty: flow.properties.qty,
+            unit: flow.properties.unit,
+            deltaTime: flow.properties.deltaTime,
+            composition: flow.properties.composition
+          }]->(toState)
 
           RETURN id(op) AS opId
           `,
@@ -55,18 +74,13 @@ export class WineryOperationRepo {
             description: op.description ?? null,
             tenantId: op.tenantId,
             createdAt: op.createdAt.toISOString(),
-            inputs: inputs.map((i) => ({
-              fromId: i.from.id,
-              qty: i.properties.qty,
-              unit: i.properties.unit,
-              desc: i.properties.description ?? null,
-            })),
-            outputs: outputs.map((o) => ({
-              containerId: o.to.id,
-              stateId: `state_${o.to.id}_${Date.now()}`, // unique state id
-              qty: o.properties.qty,
-              unit: o.properties.unit
-            })),
+            inputStateIds: inputStateIds,
+            outputStates: outputStates,
+            flows: flows.map(f => ({
+              from: { id: f.from.id },
+              to: { id: f.to.id },
+              properties: f.properties
+            }))
           }
         );
 
@@ -74,6 +88,58 @@ export class WineryOperationRepo {
       });
 
       return opId;
+    } finally {
+      await session.close();
+    }
+  }
+
+  static async getOperation(id: string): Promise<WineryOperation | null> {
+    const session = driver.session();
+
+    try {
+      const result = await session.executeRead(async (tx) => {
+        return await tx.run(
+          `
+          MATCH (op:WineryOperation {id: $id})
+          OPTIONAL MATCH (op)-[:OP_RELATED_STATE_IN]->(inputState:ContainerState)
+          OPTIONAL MATCH (op)-[:OP_RELATED_STATE_OUT]->(outputState:ContainerState)
+          OPTIONAL MATCH (op)-[:OPERATION_LOSS]->(lossState:ContainerState)
+          RETURN op,
+                 collect(DISTINCT inputState) AS inputStates,
+                 collect(DISTINCT outputState) AS outputStates,
+                 head(collect(DISTINCT lossState)) AS lossState
+          `,
+          { id }
+        );
+      });
+
+      if (result.records.length === 0) return null;
+
+      const record = result.records[0];
+      const opNode = record.get("op").properties;
+      const inputStates = record.get("inputStates").map((s: any) => ({
+        ...s.properties,
+        createdAt: new Date(s.properties.createdAt),
+        timestamp: new Date(s.properties.timestamp)
+      } as ContainerState));
+      const outputStates = record.get("outputStates").map((s: any) => ({
+        ...s.properties,
+        createdAt: new Date(s.properties.createdAt),
+        timestamp: new Date(s.properties.timestamp)
+      } as ContainerState));
+      const lossState = record.get("lossState") && record.get("lossState").properties ? {
+        ...record.get("lossState").properties,
+        createdAt: new Date(record.get("lossState").properties.createdAt),
+        timestamp: new Date(record.get("lossState").properties.timestamp)
+      } as ContainerState : undefined;
+
+      return {
+        ...opNode,
+        createdAt: new Date(opNode.createdAt),
+        inputStates,
+        outputStates,
+        lossState
+      } as WineryOperation;
     } finally {
       await session.close();
     }

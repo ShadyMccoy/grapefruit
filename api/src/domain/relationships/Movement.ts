@@ -1,26 +1,16 @@
 // src/domain/relationships/WineryOpRelationships.ts
 import { ContainerState } from "../nodes/ContainerState";
-import { WineryOperation } from "../nodes/WineryOperation";
 
-export interface WineryOpInputProps {
-  qty: number;          // quantity contributed
+// FLOW_TO relationship properties
+export interface FlowToProps {
+  qty: number;          // quantity flowing
   unit: "L" | "gal";
-  description?: string; // optional note
+  deltaTime?: number;   // ΔT in seconds or minutes
+  composition?: Record<string, number>; // varietal breakdown, etc.
 }
 
-export interface WineryOpInput {
-  from: Pick<ContainerState, "id">; // only 'id' required for pretotype
-  to?: Pick<WineryOperation, "id">; // optional, repo fills actual node
-  properties: WineryOpInputProps;
-}
-
-export interface WineryOpOutputProps {
-  qty: number;
-  unit: "L" | "gal";
-}
-
-export interface WineryOpOutput {
-  from?: Pick<WineryOperation, "id">;  // optional, repo fills actual node
-  to: Pick<ContainerState, "id">;      // only 'id' required for pretotype
-  properties: WineryOpOutputProps;
+export interface FlowToRelationship {
+  from: Pick<ContainerState, "id">;
+  to: Pick<ContainerState, "id">;
+  properties: FlowToProps;
 }
