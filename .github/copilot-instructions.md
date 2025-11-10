@@ -59,9 +59,6 @@ docker compose up -d  # Starts Neo4j on ports 7474 (browser) and 7687 (bolt)
 
 ### Seed Database
 ```powershell
-# Load base data (appellations, vineyards, varietals)
-Get-Content .\docker-init\01-starter-data.cypher | docker compose exec -T neo4j cypher-shell -u neo4j -p testpassword
-
 # Seed comprehensive test data (containers, states, operations)
 cd api
 npx tsx src/scripts/seedAll.ts

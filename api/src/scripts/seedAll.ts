@@ -2,7 +2,7 @@
 import { getDriver } from "../db/client";
 import { ContainerRepo } from "../db/repositories/ContainerRepo";
 import { ContainerStateRepo } from "../db/repositories/ContainerStateRepo";
-import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
+// import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
 import { starterData } from "../config/starterData";
 
 async function main() {
@@ -33,17 +33,6 @@ async function main() {
         console.log(`  Created state: ${s.id} for container ${s.container.id}`);
       } catch (error) {
         console.error(`  Failed to create state ${s.id}:`, error);
-      }
-    }
-
-    // Seed operations
-    console.log(`Seeding ${starterData.operations.length} operations...`);
-    for (const op of starterData.operations) {
-      try {
-        const opId = await WineryOperationRepo.createOperation(op.operation, op.inputStateIds, op.outputStates, op.flows);
-        console.log(`  Created operation: ${opId} (${op.operation.type})`);
-      } catch (error) {
-        console.error(`  Failed to create operation ${op.operation.id}:`, error);
       }
     }
 

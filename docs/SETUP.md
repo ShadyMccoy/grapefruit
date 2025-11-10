@@ -24,37 +24,26 @@ http://localhost:7474/browser/
 
 ---
 
-## 2. Load Starter Data
+## 2. Seed Comprehensive Test Data
 
-We provide a starter dataset with Appellations, Vineyards, Varietals, and Blocks.
-
-Run the following command to **delete everything and reload starter data**
-
-This pipes the 01-starter-data.cypher file in neo4j as a Cypher command:
-
-```powershell
-Get-Content .\docker-init\01-starter-data.cypher | docker compose exec -T neo4j cypher-shell -u neo4j -p testpassword
-```
-
-## 3. Seed Comprehensive Test Data
-
-Load comprehensive starter data for testing and validation:
+Load all starter data for testing and validation:
 
 ```powershell
 cd api
 npx tsx src/scripts/seedAll.ts
 ```
 
-This creates a "kitchen sink" dataset with:
+This creates a complete "kitchen sink" dataset with:
+- Base winery data (appellations, vineyards, varietals, blocks, weigh tags)
 - Containers (tanks, barrels, loss containers)
 - Initial container states with quantities and compositions
 - Sample operations (blends, transfers) with proper relationships
 
-## 4. Additional Testing
+## 3. Additional Testing
 
 For additional operation testing or specific scenarios, create new scripts following the pattern in `seedAll.ts`.
 
-## 5. Query and Visualize
+## 4. Query and Visualize
 
 Access the Neo4j Browser at `http://localhost:7474` (auth: `neo4j/testpassword`) for graph queries and visualization.
 

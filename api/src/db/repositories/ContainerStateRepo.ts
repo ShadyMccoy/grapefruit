@@ -9,6 +9,7 @@ export class ContainerStateRepo {
   async create(state: ContainerState): Promise<void> {
     await this.session.run(
       `
+      MATCH (c:Container {id: $containerId})
       CREATE (s:ContainerState {
         id: $id,
         qty: $qty,
@@ -17,13 +18,13 @@ export class ContainerStateRepo {
         timestamp: datetime($timestamp),
         tenantId: $tenantId,
         createdAt: datetime($createdAt)
-      })-[:STATE_OF]->(:Container {id: $containerId})
+      })-[:STATE_OF]->(c)
       `,
       {
         id: state.id,
         qty: state.qty,
         unit: state.unit,
-        composition: state.composition,
+        composition: JSON.stringify(state.composition),
         timestamp: state.timestamp.toISOString(),
         tenantId: state.tenantId,
         createdAt: state.createdAt.toISOString(),

@@ -6,22 +6,32 @@ export class ContainerRepo {
   constructor(private session: Session) { }
 
   async create(container: Container): Promise<void> {
-    await this.session.run(
-        `
-        CREATE (c:Container {
-          id: $id,
-          name: $name,
-          type: $type,
-          capacityHUnits: $capacityHUnits,
-          tenantId: $tenantId,
-          createdAt: datetime($createdAt)
-        })
-        `,
-      {
-        ...container,
-        createdAt: container.createdAt.toISOString()
-      }
-    );
+    const params = {
+      id: container.id,
+      name: container.name,
+      type: container.type,
+      tenantId: container.tenantId,
+      createdAt: container.createdAt.toISOString()
+    };
+
+    let query = `
+      CREATE (c:Container {
+        id: $id,
+        name: $name,
+        type: $type,
+        tenantId: $tenantId,
+        createdAt: datetime($createdAt)
+      `;
+
+    if (container.capacityHUnits !== undefined) {
+      query += `,
+        capacityHUnits: $capacityHUnits`;
+      (params as any).capacityHUnits = container.capacityHUnits;
+    }
+
+    query += `})`;
+
+    await this.session.run(query, params);
 
   }
 

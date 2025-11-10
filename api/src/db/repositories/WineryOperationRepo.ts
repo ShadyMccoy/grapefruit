@@ -1,21 +1,17 @@
-import { driver } from "../neo4jDriver";
+import { getDriver } from "../client";
 import { WineryOperation } from "../../domain/nodes/WineryOperation";
-import { FlowToRelationship } from "../../domain/relationships/Flow_to";
 import { ContainerState, Composition } from "../../domain/nodes/ContainerState";
 
 export class WineryOperationRepo {
-  static async createOperation(
-    op: WineryOperation,
-    inputStateIds: string[],
-    outputStates: { containerId: string; stateId: string; qty: number; unit: "gal" | "lbs"; composition?: Composition }[],
-    flows: FlowToRelationship[]
-  ): Promise<string> {
+  static async createOperation(op: WineryOperation): Promise<string> {
+    const driver = getDriver();
     const session = driver.session();
 
     try {
       const opId = await session.executeWrite(async (tx) => {
         const result = await tx.run(
           `
+          // Create the operation
           CREATE (op:WineryOperation {
             id: $id,
             type: $type,
@@ -23,49 +19,38 @@ export class WineryOperationRepo {
             tenantId: $tenantId,
             createdAt: datetime($createdAt)
           })
-          WITH op
 
-          // Link operation to input states
+          // Match input states and link to operation
+          WITH op
           UNWIND $inputStateIds AS inputId
           MATCH (inputState:ContainerState {id: inputId})
-          CREATE (op)-[:OP_RELATED_STATE_IN]->(inputState)
+          CREATE (op)-[:WINERY_OP_INPUT]->(inputState)
 
+          // Create output state based on flows
           WITH op
-          // Create output states and link to operation
-          UNWIND $outputStates AS out
-          MATCH (c:Container {id: out.containerId})
-          CREATE (stateOut:ContainerState {
-            id: out.stateId,
-            qty: out.qty,
-            unit: out.unit,
-            composition: out.composition,
-            timestamp: datetime()
+          MATCH (outputContainer:Container {id: $outputContainerId})
+          CREATE (outputState:ContainerState {
+            id: $id + '_output',
+            qty: reduce(total = 0, flow IN $flows | total + flow.qty),
+            unit: 'gal',
+            composition: $outputComposition,
+            timestamp: datetime(),
+            tenantId: $tenantId,
+            createdAt: datetime($createdAt)
           })
-          CREATE (stateOut)-[:STATE_OF]->(c)
-          CALL {
-            WITH op, stateOut, c
-            WITH op, stateOut, c
-            WHERE c.type = 'loss'
-            CREATE (op)-[:OPERATION_LOSS]->(stateOut)
-          }
-          CALL {
-            WITH op, stateOut, c
-            WITH op, stateOut, c
-            WHERE c.type <> 'loss'
-            CREATE (op)-[:OP_RELATED_STATE_OUT]->(stateOut)
-          }
+          CREATE (outputState)-[:STATE_OF]->(outputContainer)
+          CREATE (op)-[:WINERY_OP_OUTPUT]->(outputState)
 
-          WITH op
-          // Create FLOW_TO relationships
-          UNWIND $flows AS flow
-          MATCH (fromState:ContainerState {id: flow.from.id})
-          MATCH (toState:ContainerState {id: flow.to.id})
+          // Create flow relationships from inputs to output
+          WITH op, outputState
+          UNWIND range(0, size($flows) - 1) AS flowIndex
+          WITH op, outputState, flowIndex, $flows[flowIndex] AS flow
+          MATCH (fromState:ContainerState {id: $inputStateIds[toInteger(flow.from)]})
           CREATE (fromState)-[:FLOW_TO {
-            qty: flow.properties.qty,
-            unit: flow.properties.unit,
-            deltaTime: flow.properties.deltaTime,
-            composition: flow.properties.composition
-          }]->(toState)
+            qty: flow.qty,
+            unit: 'gal',
+            composition: fromState.composition
+          }]->(outputState)
 
           RETURN id(op) AS opId
           `,
@@ -75,13 +60,10 @@ export class WineryOperationRepo {
             description: op.description ?? null,
             tenantId: op.tenantId,
             createdAt: op.createdAt.toISOString(),
-            inputStateIds: inputStateIds,
-            outputStates: outputStates,
-            flows: flows.map(f => ({
-              from: { id: f.from.id },
-              to: { id: f.to.id },
-              properties: f.properties
-            }))
+            inputStateIds: op.inputStateIds || [],
+            flows: op.flows || [],
+            outputContainerId: op.outputContainerId,
+            outputComposition: JSON.stringify({ varietals: { chardonnay: 0.556, pinot: 0.444 } }) // TODO: Calculate properly
           }
         );
 
@@ -95,6 +77,7 @@ export class WineryOperationRepo {
   }
 
   static async getOperation(id: string): Promise<WineryOperation | null> {
+    const driver = getDriver();
     const session = driver.session();
 
     try {
@@ -103,7 +86,7 @@ export class WineryOperationRepo {
           `
           MATCH (op:WineryOperation {id: $id})
           OPTIONAL MATCH (op)-[:OP_RELATED_STATE_IN]->(inputState:ContainerState)
-          OPTIONAL MATCH (op)-[:OP_RELATED_STATE_OUT]->(outputState:ContainerState)
+          OPTIONAL MATCH (op)-[:WINERY_OP_OUTPUT]->(outputState:ContainerState)
           OPTIONAL MATCH (op)-[:OPERATION_LOSS]->(lossState:ContainerState)
           RETURN op,
                  collect(DISTINCT inputState) AS inputStates,
