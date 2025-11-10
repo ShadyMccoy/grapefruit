@@ -33,15 +33,32 @@ cd api
 npx tsx src/scripts/seedAll.ts
 ```
 
-This creates a complete "kitchen sink" dataset with:
-- Base winery data (appellations, vineyards, varietals, blocks, weigh tags)
-- Containers (tanks, barrels, loss containers)
+This creates a complete test dataset with:
+- 5 containers (tanks, barrels, loss container)
 - Initial container states with quantities and compositions
-- Sample operations (blends, transfers) with proper relationships
+- Sample transfer operation with proper relationships and flows
 
-## 3. Additional Testing
+## 3. Test Cypher Operations
 
-For additional operation testing or specific scenarios, create new scripts following the pattern in `seedAll.ts`.
+Run incremental Cypher testing to validate operation logic:
+
+```powershell
+cd api
+npx tsx src/scripts/testCypher.ts
+```
+
+This tests individual Cypher patterns and operations before integration.
+
+## 4. Verify Database State
+
+Check the seeded database for correctness:
+
+```powershell
+cd api
+npx tsx src/scripts/verifySeeding.ts
+```
+
+This validates container counts, relationships, and operation connections.
 
 ## 4. Query and Visualize
 

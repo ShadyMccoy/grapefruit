@@ -63,7 +63,7 @@ export class WineryOperationRepo {
             inputStateIds: op.inputStateIds || [],
             flows: op.flows || [],
             outputContainerId: op.outputContainerId,
-            outputComposition: JSON.stringify({ varietals: { chardonnay: 0.556, pinot: 0.444 } }) // TODO: Calculate properly
+            outputComposition: JSON.stringify({ varietals: { chardonnay: 0.556, pinot: 0.444 } }) // TODO: Calculate proper composition mixing from input states
           }
         );
 
@@ -124,6 +124,110 @@ export class WineryOperationRepo {
         outputStates,
         lossState
       } as WineryOperation;
+    } finally {
+      await session.close();
+    }
+  }
+
+  static async createTransferOperation(
+    fromContainerId: string,
+    toContainerId: string,
+    transferQty: number,
+    tenantId: string = 'winery1'
+  ): Promise<string> {
+    const driver = getDriver();
+    const session = driver.session();
+
+    try {
+      const opId = await session.executeWrite(async (tx) => {
+        const result = await tx.run(
+          `
+          // Create the transfer operation
+          CREATE (op:WineryOperation {
+            id: 'transfer_' + toString(timestamp()) + '_' + toString(rand()),
+            type: 'transfer',
+            description: 'Transfer ' + toString($transferQty) + ' gallons from ' + $fromContainerId + ' to ' + $toContainerId,
+            tenantId: $tenantId,
+            createdAt: datetime()
+          })
+
+          // Match current states of both containers
+          WITH op
+          MATCH (fromContainer:Container {id: $fromContainerId})
+          MATCH (toContainer:Container {id: $toContainerId})
+          MATCH (fromState:ContainerState)-[:STATE_OF]->(fromContainer)
+          WHERE NOT (fromState)-[:FLOW_TO]->()
+          MATCH (toState:ContainerState)-[:STATE_OF]->(toContainer)
+          WHERE NOT (toState)-[:FLOW_TO]->()
+
+          // Link operation to input states (both containers)
+          CREATE (op)-[:WINERY_OP_INPUT]->(fromState)
+          CREATE (op)-[:WINERY_OP_INPUT]->(toState)
+
+          // Create new state for from container (reduced qty)
+          CREATE (newFromState:ContainerState {
+            id: fromState.id + '_after_transfer_' + toString(timestamp()),
+            qty: fromState.qty - $transferQty,
+            unit: fromState.unit,
+            composition: fromState.composition,
+            timestamp: datetime(),
+            tenantId: $tenantId,
+            createdAt: datetime()
+          })
+          CREATE (newFromState)-[:STATE_OF]->(fromContainer)
+          CREATE (op)-[:WINERY_OP_OUTPUT]->(newFromState)
+
+          // Create new state for to container (increased qty)
+          CREATE (newToState:ContainerState {
+            id: toState.id + '_after_transfer_' + toString(timestamp()),
+            qty: toState.qty + $transferQty,
+            unit: toState.unit,
+            composition: toState.composition, // TODO: Handle composition mixing if different - currently assumes destination composition unchanged
+            timestamp: datetime(),
+            tenantId: $tenantId,
+            createdAt: datetime()
+          })
+          CREATE (newToState)-[:STATE_OF]->(toContainer)
+          CREATE (op)-[:WINERY_OP_OUTPUT]->(newToState)
+
+          // Create flow relationship from old from state to new from state
+          CREATE (fromState)-[:FLOW_TO {
+            qty: fromState.qty - $transferQty,
+            unit: fromState.unit,
+            composition: fromState.composition,
+            deltaTime: duration({seconds: 0})
+          }]->(newFromState)
+
+          // Create flow relationship from old to state to new to state
+          CREATE (toState)-[:FLOW_TO {
+            qty: toState.qty,
+            unit: toState.unit,
+            composition: toState.composition,
+            deltaTime: duration({seconds: 0})
+          }]->(newToState)
+
+          // Create flow relationship for transferred quantity from source to destination
+          CREATE (fromState)-[:FLOW_TO {
+            qty: $transferQty,
+            unit: fromState.unit,
+            composition: fromState.composition,
+            deltaTime: duration({seconds: 0})
+          }]->(newToState)
+
+          RETURN id(op) AS opId
+          `,
+          {
+            fromContainerId,
+            toContainerId,
+            transferQty,
+            tenantId
+          }
+        );
+
+        return result.records[0].get("opId").toNumber();
+      });
+
+      return opId;
     } finally {
       await session.close();
     }

@@ -2,7 +2,7 @@
 import { getDriver } from "../db/client";
 import { ContainerRepo } from "../db/repositories/ContainerRepo";
 import { ContainerStateRepo } from "../db/repositories/ContainerStateRepo";
-// import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
+import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
 import { starterData } from "../config/starterData";
 
 async function main() {
@@ -34,6 +34,21 @@ async function main() {
       } catch (error) {
         console.error(`  Failed to create state ${s.id}:`, error);
       }
+    }
+
+    // Seed operations
+    const opRepo = new WineryOperationRepo();
+    console.log("Seeding transfer operation...");
+    try {
+      const transferOpId = await WineryOperationRepo.createTransferOperation(
+        'tankB', // from
+        'tankA', // to
+        50,      // transfer 50 gallons
+        'winery1'
+      );
+      console.log(`  Created transfer operation: ${transferOpId}`);
+    } catch (error) {
+      console.error("  Failed to create transfer operation:", error);
     }
 
     console.log("Seeding completed successfully!");

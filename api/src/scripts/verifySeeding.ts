@@ -20,9 +20,9 @@ async function main() {
     const operationResult = await session.run("MATCH (o:WineryOperation) RETURN count(o) as count");
     console.log(`Winery Operations: ${operationResult.records[0].get('count').toNumber()}`);
 
-    // Check all relationships
+    // Check all relationships (counting directed relationships)
     const relationships = await session.run(`
-      MATCH ()-[r]-()
+      MATCH (a)-[r]->(b)
       RETURN type(r) as relType, count(r) as count
       ORDER BY relType
     `);

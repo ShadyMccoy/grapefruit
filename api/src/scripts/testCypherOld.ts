@@ -31,7 +31,105 @@ async function testCypher(description: string, cypher: string, params: any = {})
 
 async function main() {
   try {
-    // Test: Transfer 50 gallons from Tank B to Tank A
+    // Test 1: Basic operation creation
+    await testCypher(
+      "Create basic operation",
+      `
+      CREATE (op:WineryOperation {
+        id: $id,
+        type: $type,
+        description: $description,
+        tenantId: $tenantId,
+        createdAt: datetime($createdAt)
+      })
+      RETURN id(op) AS opId
+      `,
+      {
+        id: "test_op_1",
+        type: "blend",
+        description: "Test operation",
+        tenantId: "winery1",
+        createdAt: new Date().toISOString()
+      }
+    );
+
+    // Test 2: Match existing states
+    await testCypher(
+      "Match input states",
+      `
+      MATCH (s:ContainerState)
+      WHERE s.id IN $inputStateIds
+      RETURN count(s) AS stateCount, collect(s.id) AS stateIds
+      `,
+      {
+        inputStateIds: ["state_tankA_initial", "state_tankB_initial"]
+      }
+    );
+
+    // Test 4: Create flow relationship
+    await testCypher(
+      "Create flow relationship",
+      `
+      MATCH (from:ContainerState {id: $fromId})
+      MATCH (to:ContainerState {id: $toId})
+      CREATE (from)-[:FLOW_TO {
+        qty: $qty,
+        unit: 'gal',
+        composition: from.composition
+      }]->(to)
+      RETURN 'Flow created' AS result
+      `,
+      {
+        fromId: "state_tankA_initial",
+        toId: "test_output_state",
+        qty: 1000
+      }
+    );
+
+    // Test 5: Complete operation creation (simplified)
+    await testCypher(
+      "Complete operation creation",
+      `
+      CREATE (op:WineryOperation {
+        id: $id,
+        type: $type,
+        description: $description,
+        tenantId: $tenantId,
+        createdAt: datetime($createdAt)
+      })
+      WITH op
+      UNWIND $inputStateIds AS inputId
+      MATCH (inputState:ContainerState {id: inputId})
+      CREATE (op)-[:WINERY_OP_INPUT]->(inputState)
+      WITH op
+      MATCH (outputContainer:Container {id: $outputContainerId})
+      CREATE (outputState:ContainerState {
+        id: $id + '_output',
+        qty: $totalQty,
+        unit: 'gal',
+        composition: $outputComposition,
+        timestamp: datetime(),
+        tenantId: $tenantId,
+        createdAt: datetime($createdAt)
+      })
+      CREATE (outputState)-[:STATE_OF]->(outputContainer)
+      CREATE (op)-[:WINERY_OP_OUTPUT]->(outputState)
+      RETURN id(op) AS opId
+      `,
+      {
+        id: "test_complete_op",
+        type: "blend",
+        description: "Complete test operation",
+        tenantId: "winery1",
+        createdAt: new Date().toISOString(),
+        inputStateIds: ["state_tankA_initial", "state_tankB_initial"],
+        outputContainerId: "tankA",
+        totalQty: 1800,
+        outputComposition: JSON.stringify({ varietals: { chardonnay: 0.556, pinot: 0.444 } })
+      }
+    );
+
+    // Test 6: Transfer 50 gallons from Tank B to Tank A
     await testCypher(
       "Transfer 50 gallons from Tank B to Tank A",
       `
