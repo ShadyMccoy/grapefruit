@@ -40,6 +40,11 @@ export class WineryOperationRepo {
           })
           CREATE (out)-[:STATE_OF]->(c)
           CREATE (op)-[:WINERY_OP_OUTPUT]->(out)
+          // Maintain CURRENT_STATE pointer on the container timeline
+          WITH op, inStates, out, c, flows
+          OPTIONAL MATCH (c)-[old:CURRENT_STATE]->(:ContainerState)
+          DELETE old
+          CREATE (c)-[:CURRENT_STATE]->(out)
           WITH op, inStates, collect(out) AS outStates, flows
           // Create lineage FLOW_TO by index
           UNWIND flows AS f
@@ -117,17 +122,20 @@ export class WineryOperationRepo {
       const inputStates = record.get("inputStates").map((s: any) => ({
         ...s.properties,
         createdAt: new Date(s.properties.createdAt),
-        timestamp: new Date(s.properties.timestamp)
+        timestamp: new Date(s.properties.timestamp),
+        composition: s.properties.composition ? JSON.parse(s.properties.composition) : undefined
       } as ContainerState));
       const outputStates = record.get("outputStates").map((s: any) => ({
         ...s.properties,
         createdAt: new Date(s.properties.createdAt),
-        timestamp: new Date(s.properties.timestamp)
+        timestamp: new Date(s.properties.timestamp),
+        composition: s.properties.composition ? JSON.parse(s.properties.composition) : undefined
       } as ContainerState));
       const lossState = record.get("lossState") && record.get("lossState").properties ? {
         ...record.get("lossState").properties,
         createdAt: new Date(record.get("lossState").properties.createdAt),
-        timestamp: new Date(record.get("lossState").properties.timestamp)
+        timestamp: new Date(record.get("lossState").properties.timestamp),
+        composition: record.get("lossState").properties.composition ? JSON.parse(record.get("lossState").properties.composition) : undefined
       } as ContainerState : undefined;
 
       return {
