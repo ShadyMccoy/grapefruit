@@ -1,6 +1,6 @@
 import { getDriver } from "../client";
 import { WineryOperation } from "../../domain/nodes/WineryOperation";
-import { ContainerState, Composition } from "../../domain/nodes/ContainerState";
+import { ContainerState } from "../../domain/nodes/ContainerState";
 
 export class WineryOperationRepo {
   static async createOperation(op: WineryOperation): Promise<string> {
@@ -9,9 +9,10 @@ export class WineryOperationRepo {
 
     try {
       const opId = await session.executeWrite(async (tx) => {
-        const result = await tx.run(
-          `
-          // Create the operation
+        // Intent: Minimal, deterministic write. Single MATCH phase for existing inputs/containers, then CREATE everything else. No MERGE, no dynamic string building.
+        // Reasoning: Containers are timelines; each operation appends new ContainerState nodes and FLOW_TO edges from prior states.
+
+        const query = `
           CREATE (op:WineryOperation {
             id: $id,
             type: $type,
@@ -19,55 +20,67 @@ export class WineryOperationRepo {
             tenantId: $tenantId,
             createdAt: datetime($createdAt)
           })
-
-          // Match input states and link to operation
-          WITH op
-          UNWIND $inputStateIds AS inputId
-          MATCH (inputState:ContainerState {id: inputId})
-          CREATE (op)-[:WINERY_OP_INPUT]->(inputState)
-
-          // Create output state based on flows
-          WITH op
-          MATCH (outputContainer:Container {id: $outputContainerId})
-          CREATE (outputState:ContainerState {
-            id: $id + '_output',
-            qty: reduce(total = 0, flow IN $flows | total + flow.qty),
-            unit: 'gal',
-            composition: $outputComposition,
-            timestamp: datetime(),
-            tenantId: $tenantId,
-            createdAt: datetime($createdAt)
+          WITH op, $inputStateIds AS inputIds, $outputSpecs AS specs, $flows AS flows, $createdAt AS createdAtIso, $tenantId AS tenant
+          // Bind all input states once
+          UNWIND inputIds AS inId
+          MATCH (inState:ContainerState {id: inId})
+          CREATE (op)-[:WINERY_OP_INPUT]->(inState)
+          WITH op, collect(inState) AS inStates, specs, flows, createdAtIso, tenant
+          // Create all outputs and link to containers and op
+          UNWIND specs AS spec
+          MATCH (c:Container {id: spec.containerId})
+          CREATE (out:ContainerState {
+            id: spec.stateId,
+            qty: toInteger(spec.qty),
+            unit: spec.unit,
+            composition: spec.composition,
+            timestamp: datetime(createdAtIso),
+            tenantId: tenant,
+            createdAt: datetime(createdAtIso)
           })
-          CREATE (outputState)-[:STATE_OF]->(outputContainer)
-          CREATE (op)-[:WINERY_OP_OUTPUT]->(outputState)
-
-          // Create flow relationships from inputs to output
-          WITH op, outputState
-          UNWIND range(0, size($flows) - 1) AS flowIndex
-          WITH op, outputState, flowIndex, $flows[flowIndex] AS flow
-          MATCH (fromState:ContainerState {id: $inputStateIds[toInteger(flow.from)]})
+          CREATE (out)-[:STATE_OF]->(c)
+          CREATE (op)-[:WINERY_OP_OUTPUT]->(out)
+          WITH op, inStates, collect(out) AS outStates, flows
+          // Create lineage FLOW_TO by index
+          UNWIND flows AS f
+          WITH op, inStates, outStates, f
+          WITH op, inStates[toInteger(f.from)] AS fromState, outStates[toInteger(f.to)] AS toState, f
           CREATE (fromState)-[:FLOW_TO {
-            qty: flow.qty,
-            unit: 'gal',
-            composition: fromState.composition
-          }]->(outputState)
+            qty: toInteger(f.qty),
+            nominalDollars: toInteger(f.nominalDollars),
+            realDollars: toInteger(f.realDollars),
+            deltaTime: duration({seconds: toInteger(f.deltaTime)})
+          }]->(toState)
+          WITH op
+          RETURN op.id AS opId
+        `;
 
-          RETURN id(op) AS opId
-          `,
-          {
-            id: op.id,
-            type: op.type,
-            description: op.description ?? null,
-            tenantId: op.tenantId,
-            createdAt: op.createdAt.toISOString(),
-            inputStateIds: op.inputStateIds || [],
-            flows: op.flows || [],
-            outputContainerId: op.outputContainerId,
-            outputComposition: JSON.stringify({ varietals: { chardonnay: 0.556, pinot: 0.444 } }) // TODO: Calculate proper composition mixing from input states
-          }
-        );
+        const params: Record<string, any> = {
+          id: op.id,
+          type: op.type,
+          description: op.description ?? null,
+          tenantId: op.tenantId,
+          createdAt: op.createdAt.toISOString(),
+          inputStateIds: op.inputStateIds || [],
+          outputSpecs: (op.outputSpecs || []).map(s => ({
+            containerId: s.containerId,
+            stateId: s.stateId,
+            qty: s.qty,
+            unit: s.unit,
+            composition: JSON.stringify(s.composition)
+          })),
+          flows: (op.flows || []).map(f => ({
+            from: f.from,
+            to: f.to,
+            qty: f.qty,
+            nominalDollars: f.composition?.nominalDollars ?? 0,
+            realDollars: f.composition?.realDollars ?? 0,
+            deltaTime: (f as any).deltaTime ?? 0
+          }))
+        };
 
-        return result.records[0].get("opId").toNumber();
+        const result = await tx.run(query, params);
+        return result.records[0].get("opId");
       });
 
       return opId;
@@ -85,7 +98,7 @@ export class WineryOperationRepo {
         return await tx.run(
           `
           MATCH (op:WineryOperation {id: $id})
-          OPTIONAL MATCH (op)-[:OP_RELATED_STATE_IN]->(inputState:ContainerState)
+          OPTIONAL MATCH (op)-[:WINERY_OP_INPUT]->(inputState:ContainerState)
           OPTIONAL MATCH (op)-[:WINERY_OP_OUTPUT]->(outputState:ContainerState)
           OPTIONAL MATCH (op)-[:OPERATION_LOSS]->(lossState:ContainerState)
           RETURN op,
@@ -124,110 +137,6 @@ export class WineryOperationRepo {
         outputStates,
         lossState
       } as WineryOperation;
-    } finally {
-      await session.close();
-    }
-  }
-
-  static async createTransferOperation(
-    fromContainerId: string,
-    toContainerId: string,
-    transferQty: number,
-    tenantId: string = 'winery1'
-  ): Promise<string> {
-    const driver = getDriver();
-    const session = driver.session();
-
-    try {
-      const opId = await session.executeWrite(async (tx) => {
-        const result = await tx.run(
-          `
-          // Create the transfer operation
-          CREATE (op:WineryOperation {
-            id: 'transfer_' + toString(timestamp()) + '_' + toString(rand()),
-            type: 'transfer',
-            description: 'Transfer ' + toString($transferQty) + ' gallons from ' + $fromContainerId + ' to ' + $toContainerId,
-            tenantId: $tenantId,
-            createdAt: datetime()
-          })
-
-          // Match current states of both containers
-          WITH op
-          MATCH (fromContainer:Container {id: $fromContainerId})
-          MATCH (toContainer:Container {id: $toContainerId})
-          MATCH (fromState:ContainerState)-[:STATE_OF]->(fromContainer)
-          WHERE NOT (fromState)-[:FLOW_TO]->()
-          MATCH (toState:ContainerState)-[:STATE_OF]->(toContainer)
-          WHERE NOT (toState)-[:FLOW_TO]->()
-
-          // Link operation to input states (both containers)
-          CREATE (op)-[:WINERY_OP_INPUT]->(fromState)
-          CREATE (op)-[:WINERY_OP_INPUT]->(toState)
-
-          // Create new state for from container (reduced qty)
-          CREATE (newFromState:ContainerState {
-            id: fromState.id + '_after_transfer_' + toString(timestamp()),
-            qty: fromState.qty - $transferQty,
-            unit: fromState.unit,
-            composition: fromState.composition,
-            timestamp: datetime(),
-            tenantId: $tenantId,
-            createdAt: datetime()
-          })
-          CREATE (newFromState)-[:STATE_OF]->(fromContainer)
-          CREATE (op)-[:WINERY_OP_OUTPUT]->(newFromState)
-
-          // Create new state for to container (increased qty)
-          CREATE (newToState:ContainerState {
-            id: toState.id + '_after_transfer_' + toString(timestamp()),
-            qty: toState.qty + $transferQty,
-            unit: toState.unit,
-            composition: toState.composition, // TODO: Handle composition mixing if different - currently assumes destination composition unchanged
-            timestamp: datetime(),
-            tenantId: $tenantId,
-            createdAt: datetime()
-          })
-          CREATE (newToState)-[:STATE_OF]->(toContainer)
-          CREATE (op)-[:WINERY_OP_OUTPUT]->(newToState)
-
-          // Create flow relationship from old from state to new from state
-          CREATE (fromState)-[:FLOW_TO {
-            qty: fromState.qty - $transferQty,
-            unit: fromState.unit,
-            composition: fromState.composition,
-            deltaTime: duration({seconds: 0})
-          }]->(newFromState)
-
-          // Create flow relationship from old to state to new to state
-          CREATE (toState)-[:FLOW_TO {
-            qty: toState.qty,
-            unit: toState.unit,
-            composition: toState.composition,
-            deltaTime: duration({seconds: 0})
-          }]->(newToState)
-
-          // Create flow relationship for transferred quantity from source to destination
-          CREATE (fromState)-[:FLOW_TO {
-            qty: $transferQty,
-            unit: fromState.unit,
-            composition: fromState.composition,
-            deltaTime: duration({seconds: 0})
-          }]->(newToState)
-
-          RETURN id(op) AS opId
-          `,
-          {
-            fromContainerId,
-            toContainerId,
-            transferQty,
-            tenantId
-          }
-        );
-
-        return result.records[0].get("opId").toNumber();
-      });
-
-      return opId;
     } finally {
       await session.close();
     }

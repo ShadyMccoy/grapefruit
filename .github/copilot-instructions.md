@@ -250,3 +250,9 @@ const opId = await WineryOperationRepo.createOperation(
 
 ### Goal
 AI collaboration in Grapefruit should amplify precision, not creativity. Every contribution must strengthen auditability.
+
+Before making changes, explain what you will do first.
+
+When doing powershell commands separate commands with ; and not &&
+
+Before running scripts that modify the database, ensure you have cleaned and seeded the database with test data.

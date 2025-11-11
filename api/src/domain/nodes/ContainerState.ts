@@ -10,7 +10,7 @@ export interface ContainerState extends BaseNode {
 }
 
 export interface Composition {
-  varietals?: Record<string, number>; // e.g., { "chardonnay": 0.5, "pinot": 0.5 }
+  varietals?: Record<string, number>; // e.g., { "chardonnay": 950, "pinot": 800 } - absolute amounts
   realDollars?: number;
   nominalDollars?: number;
 }

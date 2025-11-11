@@ -23,7 +23,7 @@ export const starterData: StarterData = {
       container: { id: "tankA", name: "Tank A", type: "tank", capacityHUnits: 2641720, tenantId: "winery1", createdAt: new Date() },
       qty: 1000,
       unit: "gal",
-      composition: { varietals: { chardonnay: 1.0 }, realDollars: 5000, nominalDollars: 4800 },
+      composition: { varietals: { chardonnay: 1000 }, realDollars: 5000, nominalDollars: 4800 },
       timestamp: new Date(),
       tenantId: "winery1",
       createdAt: new Date(),
@@ -33,7 +33,7 @@ export const starterData: StarterData = {
       container: { id: "tankB", name: "Tank B", type: "tank", capacityHUnits: 2113376, tenantId: "winery1", createdAt: new Date() },
       qty: 800,
       unit: "gal",
-      composition: { varietals: { pinot: 1.0 }, realDollars: 4000, nominalDollars: 3900 },
+      composition: { varietals: { pinot: 800 }, realDollars: 4000, nominalDollars: 3900 },
       timestamp: new Date(),
       tenantId: "winery1",
       createdAt: new Date(),
@@ -48,8 +48,8 @@ export const starterData: StarterData = {
       createdAt: new Date(),
       inputStateIds: ["state_tankA_initial", "state_tankB_initial"],
       flows: [
-        { from: 0, qty: 1000 }, // 1000 gal from tankA
-        { from: 1, qty: 800 }  // 800 gal from tankB
+        { from: 0, to: 0, qty: 1000, composition: { varietals: { chardonnay: 1000 }, realDollars: 5000, nominalDollars: 4800 } }, // 1000 gal from tankA to output 0
+        { from: 1, to: 0, qty: 800, composition: { varietals: { pinot: 800 }, realDollars: 4000, nominalDollars: 3900 } }  // 800 gal from tankB to output 0
       ],
       outputContainerId: "tankA", // Result goes to tankA
     },

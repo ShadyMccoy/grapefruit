@@ -37,19 +37,19 @@ async function main() {
     }
 
     // Seed operations
-    const opRepo = new WineryOperationRepo();
-    console.log("Seeding transfer operation...");
-    try {
-      const transferOpId = await WineryOperationRepo.createTransferOperation(
-        'tankB', // from
-        'tankA', // to
-        50,      // transfer 50 gallons
-        'winery1'
-      );
-      console.log(`  Created transfer operation: ${transferOpId}`);
-    } catch (error) {
-      console.error("  Failed to create transfer operation:", error);
-    }
+    // const opRepo = new WineryOperationRepo();
+    // console.log("Seeding transfer operation...");
+    // try {
+    //   const transferOpId = await WineryOperationRepo.createTransferOperation(
+    //     'tankB', // from
+    //     'tankA', // to
+    //     50,      // transfer 50 gallons
+    //     'winery1'
+    //   );
+    //   console.log(`  Created transfer operation: ${transferOpId}`);
+    // } catch (error) {
+    //   console.error("  Failed to create transfer operation:", error);
+    // }
 
     console.log("Seeding completed successfully!");
   } catch (error) {

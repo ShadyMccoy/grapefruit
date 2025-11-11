@@ -1,4 +1,13 @@
 import express, { Request, Response } from "express";
+import { WineryOperation } from "./domain/nodes/WineryOperation";
+import { WineryOperationService } from "./core/WineryOperationService";
+import {
+  calculateFlowComposition,
+  calculateBlendComposition,
+  validateFlows,
+  generateTransferFlows,
+  ContainerState as HelperContainerState
+} from "./core/CompositionHelpers";
 
 import dotenv from "dotenv";
 import neo4j from "neo4j-driver";
@@ -7,6 +16,9 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Middleware
+app.use(express.json());
 
 // Create Neo4j driver (stub values for now)
 const driver = neo4j.driver(
@@ -19,6 +31,90 @@ const driver = neo4j.driver(
 
 app.get("/", async (_req: Request, res: Response) => {
   res.json({ status: "ok", message: "Grapefruit API running" });
+});
+
+app.post("/api/operations", async (req: Request, res: Response) => {
+  try {
+    const operation: WineryOperation = req.body;
+
+    // Validate required fields
+    if (!operation.id || !operation.type || !operation.tenantId) {
+      return res.status(400).json({
+        error: "Missing required fields: id, type, tenantId"
+      });
+    }
+
+    // Create the operation
+    const createdOperation = await WineryOperationService.createOperation(operation);
+
+    res.json(createdOperation);
+  } catch (error) {
+    console.error("Operation creation failed:", error);
+    res.status(400).json({
+      error: (error as Error).message
+    });
+  }
+});
+
+// Composition calculation helpers for front-end
+app.post("/api/composition/calculate-flow", async (req: Request, res: Response) => {
+  try {
+    const { inputState, flowQty }: { inputState: HelperContainerState; flowQty: number } = req.body;
+
+    if (!inputState || flowQty === undefined) {
+      return res.status(400).json({ error: "Missing inputState or flowQty" });
+    }
+
+    const composition = calculateFlowComposition(inputState, flowQty);
+    res.json({ composition });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/composition/calculate-blend", async (req: Request, res: Response) => {
+  try {
+    const { flows } = req.body;
+
+    if (!flows || !Array.isArray(flows)) {
+      return res.status(400).json({ error: "Missing or invalid flows array" });
+    }
+
+    const composition = calculateBlendComposition(flows);
+    res.json({ composition });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/composition/validate-flows", async (req: Request, res: Response) => {
+  try {
+    const { inputStates, flows } = req.body;
+
+    if (!inputStates || !flows) {
+      return res.status(400).json({ error: "Missing inputStates or flows" });
+    }
+
+    const validation = validateFlows(inputStates, flows);
+    res.json(validation);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/composition/generate-transfer", async (req: Request, res: Response) => {
+  try {
+    const { fromState, toState, transferQty } = req.body;
+
+    if (!fromState || !toState || transferQty === undefined) {
+      return res.status(400).json({ error: "Missing fromState, toState, or transferQty" });
+    }
+
+    const flows = generateTransferFlows(fromState, toState, transferQty);
+    res.json({ flows });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
 });
 
 app.listen(port, () => {
