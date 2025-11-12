@@ -56,3 +56,8 @@ Generally speaking, objects in the domain are represented as **nodes**, and the 
 (WineryOperation)-[:OPERATION_LOSS]->(ContainerState)
 (ContainerState)<-[:OBSERVATION_OF]-(Observation)
 (* )-[:OWNED_BY]->(Tenant)
+
+here's a simple diagram representing the relationships:
+![Winery Operation Schematic](./wineryOpSchematic.jpg "WineryOperation inputs/outputs/flows overview")
+wineryOpSchematic.jpg
+
