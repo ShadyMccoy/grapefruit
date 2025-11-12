@@ -1,4 +1,4 @@
-# Grapefruit Graph Setup
+# Grapefruit API Setup
 
 ---
 
@@ -38,7 +38,18 @@ This creates a complete test dataset with:
 - Initial container states with quantities and compositions
 - Sample transfer operation with proper relationships and flows
 
-## 3. Test Cypher Operations
+## 3. Run API Server
+
+Start the development server with hot reload:
+
+```powershell
+cd api
+npm run dev
+```
+
+The API will be available at `http://localhost:3000` (or configured port).
+
+## 4. Test Cypher Operations
 
 Run incremental Cypher testing to validate operation logic:
 
@@ -49,7 +60,7 @@ npx tsx src/scripts/testCypher.ts
 
 This tests individual Cypher patterns and operations before integration.
 
-## 4. Verify Database State
+## 5. Verify Database State
 
 Check the seeded database for correctness:
 
@@ -60,7 +71,7 @@ npx tsx src/scripts/verifySeeding.ts
 
 This validates container counts, relationships, and operation connections.
 
-## 4. Query and Visualize
+## 6. Query and Visualize
 
 Access the Neo4j Browser at `http://localhost:7474` (auth: `neo4j/testpassword`) for graph queries and visualization.
 

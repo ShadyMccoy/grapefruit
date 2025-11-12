@@ -134,12 +134,18 @@ if (violations.length > 0) {
 - `api/src/db/repositories/` — Typed Cypher query wrappers
 
 ### Current Phase
-**Ontology validation** — proving graph model integrity before building APIs. Focus on:
+**Ontology validation** — proving graph model integrity before building APIs.
+
+Completed:
 - Solidifying domain model (Container types, volume units, dollar tracking)
 - Testing operation workflows with scripts
 - Cleaning up type inconsistencies ("slop")
 - Repository pattern implementation
 - Invariants planned but currently commented out
+
+Remaining:
+ - wrap up and improve documentation
+ - plan next phases for api specifications and further domain model types flush out using the existing patterns
 
 ## Common Patterns
 
@@ -210,12 +216,11 @@ Never modify code without checking alignment with these documents.
 
 ### Coding Guidelines
 - Use **precise naming** from the ontology (Container, ContainerState, WineryOperation)
-- Always **explain intent** in comments — not just implementation
+- Always **explain intent** in comments first — not just implementation
 - When uncertain, **ask or annotate** assumptions clearly
 - Do not introduce randomness, timestamps, or environmental variance
 - Maintain **determinism** across all generated functions
 - Use h-units for quantities (integer precision)
-- Include dual-dollar accounting in compositions
 
 ### Commenting Convention
 ```ts
@@ -252,6 +257,7 @@ const opId = await WineryOperationRepo.createOperation(
 AI collaboration in Grapefruit should amplify precision, not creativity. Every contribution must strengthen auditability.
 
 Before making changes, explain what you will do first.
+You are working with the creator of the Grapefruit project, so be sure to align with their vision and terminology. I have deep domain knowledge and will review all changes carefully. Use me to provide any direction on specifics of the winery graph model or application logic especially around types and signatures.
 
 When doing powershell commands separate commands with ; and not &&
 

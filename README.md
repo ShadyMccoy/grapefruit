@@ -40,7 +40,7 @@ Grapefruit provides a **single source of truth** for material flow, blends, and 
 - **Containerization:** Docker + docker-compose  
 - **Frontend (planned):** React for lineage visualization, interactive Sankey/aging diagrams, and heat maps.
 
-> For setup instructions, see [**/docs/SETUP.md**](./docs/SETUP.md)
+> For setup instructions, see [**SETUP.md**](SETUP.md)
 
 ---
 
@@ -74,11 +74,12 @@ Each operation produces new container states and optionally a virtual L node, cr
 
 | File | Description |
 |------|--------------|
-| [`docs/GRAPH_MODEL.md`](./docs/GRAPH_MODEL.md) | Ontology and graph structure (nodes, relationships, invariants). |
-| [`docs/APPLICATION_LOGIC.md`](./docs/APPLICATION_LOGIC.md) | Domain layer, repository design, and invariants. |
-| [`docs/WORKFLOW_MODEL.md`](./docs/WORKFLOW_MODEL.md) | Mapping real-world operations (transfers, blends, bottling) to graph transformations. |
-| [`docs/ROADMAP.md`](./docs/ROADMAP.md) | Development roadmap and milestone tracking. |
+| [`ROADMAP.md`](./ROADMAP.md) | Development roadmap and milestone tracking. |
 | [`.github/copilot-instructions.md`](./.github/copilot-instructions.md) | AI collaboration guidelines and project reasoning hierarchy. |
+| [`api/src/README.md`](./api/src/README.md) | API architecture and service overview. |
+| [`api/src/domain/README.md`](./api/src/domain/README.md) | Domain model, operations, and invariants. |
+| [`api/src/db/README.md`](./api/src/db/README.md) | Graph database structure and relationships. |
+| [`api/src/core/README.md`](./api/src/core/README.md) | Invariants, validation, and operation algebra. |
 ---
 
 ## ⚗️ Current Phase

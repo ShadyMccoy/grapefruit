@@ -3,7 +3,7 @@ import { getDriver } from "../db/client";
 import { ContainerRepo } from "../db/repositories/ContainerRepo";
 import { ContainerStateRepo } from "../db/repositories/ContainerStateRepo";
 import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
-import { starterData } from "../config/starterData";
+import { starterData } from "./starterData";
 
 async function main() {
   const driver = getDriver();
