@@ -6,17 +6,9 @@ It models the winery as a **directed graph of containers and operations**, where
 
 ---
 
-## 🧭 Overview
-
-| Concept | Purpose |
-|----------|----------|
-| **Container** | Physical or virtual vessel (tank, barrel, press, loss, gain). |
-| **ContainerState** | Snapshot of a container's contents at a point in time, including qty and composition. Immutable and versioned. |
-| **Operation** | Transformation consuming input states and producing output states (transfer, blend, bottle). |
-| **Snapshot** | The reconstructed winery state at a given moment. |
-| **Tenant** | Logical owner for multi-winery environments. |
-
 Grapefruit provides a **single source of truth** for material flow, blends, and transformations — forming the foundation for transparent audits, regulatory compliance, and accurate cost accounting.
+
+Every grape is tracked from reception to bottle, ensuring that winemakers can demonstrate full accountability and traceability.
 
 ---
 
@@ -57,19 +49,6 @@ This layered structure ensures **compile-time safety** (via TypeScript) and **ru
 
 ---
 
-## 🧮 The Winery Graph
-
-All operations are modeled as **mixes**:  
-`N inputs → M outputs`, where inputs can include **physical containers**, **Gain/Loss containers**, or **Loss containers**.
-
-- **Qty, composition, and nominal dollars are conserved.**  
-- **Real dollars** flow only with physical wine.  
-- **Loss containers** capture discrepancies or physical losses.
-
-Each operation produces new container states and optionally a virtual L node, creating a permanent, auditable record of truth.
-
----
-
 ## 🧩 Documentation Map
 
 | File | Description |
@@ -92,15 +71,6 @@ Once validated, subsequent phases will introduce:
 - ERP integrations  
 - Audit and compliance exports  
 
-## ⏱ Time Model
-
-- Each `ContainerState` has an **absolute timestamp (T)**.  
-- Each flow edge has a **delta time (ΔT)** relative to its source state.  
-- Containers have a **CURRENT_STATE** pointer to latest containerState  
-  - This node’s timestamp = now  
-  - ΔT of incoming flows is updated daily  
-- This enables **time-weighted integration**, **residence time computation**, and continuous aging visualization.
-
 ---
 
 ## ⚗️ Visualization & UI Philosophy
@@ -110,6 +80,34 @@ Once validated, subsequent phases will introduce:
 - **Animated Aging Fields:** ΔT allows flows to evolve visually over time.  
 - **Composition Tracking:** Shows varietal breakdown and other attributes with deterministic integer arithmetic in h-units.  
 - **Interactive Exploration:** Timeline scrubbing and playback of operations, blending, and aging.
+
+---
+
+## 🧮 The Winery Graph
+
+All operations are modeled as **mixes**:  
+`N inputs → M outputs`, where inputs can include **physical containers**, **Weigh Tags**, or **Additives**
+
+- **Qty, composition, and nominal dollars are conserved.**  
+- **Real dollars** flow only with physical wine.  
+- **Loss containers** capture discrepancies or physical losses.
+
+Each operation produces new container states and optionally a virtual Loss node (gains are negative losses)
+
+- **Qty, composition, and nominal dollars are conserved.**  
+- **Real dollars** flow only with physical wine.  
+- **Loss containers** capture discrepancies or physical losses.
+
+---
+
+## ⏱ Time Model
+
+- Each `ContainerState` has an **absolute timestamp (T)**.  
+- Each flow edge has a **delta time (ΔT)** relative to its source state.  
+- Containers have a **CURRENT_STATE** pointer to latest containerState  
+  - This node’s timestamp = now  
+  - ΔT of incoming flows is updated daily  
+- This enables **time-weighted integration**, **residence time computation**, and continuous aging visualization.
 
 ---
 
