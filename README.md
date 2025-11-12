@@ -65,7 +65,16 @@ This layered structure ensures **compile-time safety** (via TypeScript) and **ru
 
 Grapefruit is in the **ontology validation** phase — proving the integrity of the graph model before expanding into full application workflows.
 
-Once validated, subsequent phases will introduce:
+### Immediate Next Steps
+- **Type Expansion:** flush out domain types (WeighTags, expanded VocabNodes)
+- **Operation Diversity:** Implement additional operation types beyond basic transfers
+- **Data Scale Testing:** Expand seeding to larger datasets (10k, 100k, 100M operations)
+- **Performance Validation:** Test query performance and scalability
+- **Query API Development:** Build endpoints for lineage and provenance queries
+- **Composition Algebra Refinement:** Validate and refine the mental model based on testing results
+
+### Future Phases (Post-Validation)
+- **Prototype Delivery:** Clean codebase with minimal frontend
 - REST & GraphQL APIs  
 - UI for lineage visualization  
 - ERP integrations  

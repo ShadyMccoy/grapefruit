@@ -44,11 +44,12 @@ interface BaseNode {
 }
 ```
 
-**Current Cleanup Items**:
-- Container type union needs: `"tank" | "barrel" | "press" | "bottle" | "loss"`
-- Volume should be integer h-units (1 h-unit = 1/10,000 gallon), not `volumeLiters: number`
-- ContainerState needs `realDollars` and `nominalDollars` properties
-- Various type definitions in flux during ontology validation phase
+**Current Status**:
+- ✅ Container type union: `"tank" | "barrel" | "bottle" | "loss"` - implemented
+- ✅ Volume in h-units (1 h-unit = 1/10,000 gallon), not `volumeLiters: number` - implemented
+- ✅ ContainerState has `realDollars` and `nominalDollars` properties - implemented
+- 🔄 Various type definitions in flux during ontology validation phase - ongoing
+- 📋 **Next:** Expand VocabNodes (WeighTags, Appellation, Vineyard, etc.)
 
 ## Development Workflow
 
@@ -120,14 +121,17 @@ if (violations.length > 0) {
 ## Key Files
 
 ### Documentation (Read First)
-- `docs/GRAPH_MODEL.md` — Ontology, relationships, invariants
-- `docs/APPLICATION_LOGIC.md` — Repository pattern, service layer design
-- `docs/WORKFLOW_MODEL.md` — Mapping real-world operations (blend, transfer) to graph
-- `docs/AI_COLLABORATION.md` — AI-specific guidelines and reasoning hierarchy
+- `ROADMAP.md` — Development roadmap and milestone tracking
+- `README.md` — Project overview and current phase
+- `api/src/README.md` — API architecture and service overview
+- `api/src/domain/README.md` — Domain model, operations, and invariants
+- `api/src/db/README.md` — Graph database structure and relationships
+- `api/src/core/README.md` — Invariants, validation, and operation algebra
+- `SETUP.md` — Environment setup and development workflow
 
 ### Domain Model
 - `api/src/domain/nodes/` — Core entity interfaces
-- `api/src/domain/relationships/Movement.ts` — FLOW_TO relationship types
+- `api/src/domain/relationships/Flow_to.ts` — FLOW_TO relationship types
 
 ### Database Layer
 - `api/src/db/client.ts` — Neo4j driver singleton
@@ -143,9 +147,14 @@ Completed:
 - Repository pattern implementation
 - Invariants planned but currently commented out
 
-Remaining:
- - wrap up and improve documentation
- - plan next phases for api specifications and further domain model types flush out using the existing patterns
+Immediate Next Steps:
+- **Type Expansion:** Complete domain types (WeighTags, expanded VocabNodes)
+- **Data Scale Testing:** Expand seeding to larger datasets (10k, 100k, 100M operations)
+- **Operation Diversity:** Implement additional operation types beyond basic transfers
+- **Performance Validation:** Test query performance and scalability
+- **Query API Development:** Build endpoints for lineage and provenance queries
+- **Composition Algebra Refinement:** Validate and refine the mental model based on testing results
+- **Prototype Delivery:** Clean codebase with minimal frontend preparation
 
 ## Common Patterns
 
@@ -155,14 +164,18 @@ Remaining:
 const inputStates = await stateRepo.getCurrentStates([containerId1, containerId2]);
 
 // 2. Calculate balanced outputs
-const totalVolume = sum(inputStates.map(s => s.volumeLiters));
+const totalVolume = sum(inputStates.map(s => s.qty));
 
 // 3. Create new state(s)
 const newState = await stateRepo.createState({
   containerId: outputContainerId,
-  volumeLiters: totalVolume,
-  nominalDollars: sum(inputStates.map(s => s.nominalDollars)),
-  realDollars: sum(inputStates.map(s => s.realDollars)),
+  qty: totalVolume,
+  unit: 'gal',
+  composition: {
+    varietals: { /* blended composition */ },
+    realDollars: sum(inputStates.map(s => s.composition.realDollars || 0)),
+    nominalDollars: sum(inputStates.map(s => s.composition.nominalDollars || 0))
+  },
 });
 
 // 4. Create operation linking states
@@ -172,7 +185,7 @@ const op = await opRepo.createOperation({
   outputs: [newState],
 });
 
-// 5. Validate invariants
+// 5. Validate invariants (when implemented)
 await invariants.validateOperation(op);
 ```
 
@@ -206,13 +219,13 @@ To ensure AI-generated code:
 ### Reasoning Hierarchy
 When generating or editing code, AI agents should reason in this order:
 
-1. **Graph Ontology** → (`docs/GRAPH_MODEL.md`)
-2. **Domain & Repositories** → (`docs/APPLICATION_LOGIC.md`)
-3. **Workflow Semantics** → (`docs/WORKFLOW_MODEL.md`)
-4. **Integration Logic** → API, ERP interfaces
+1. **Graph Ontology** → (`api/src/domain/README.md`, `api/src/db/README.md`)
+2. **Domain & Repositories** → (`api/src/domain/`, `api/src/db/repositories/`)
+3. **Workflow Semantics** → (`api/src/core/`, `api/src/scripts/`)
+4. **Integration Logic** → API endpoints, ERP interfaces
 5. **Infrastructure** → Docker, environment, CI/CD
 
-Never modify code without checking alignment with these documents.
+Never modify code without checking alignment with existing documentation and patterns.
 
 ### Coding Guidelines
 - Use **precise naming** from the ontology (Container, ContainerState, WineryOperation)
@@ -255,6 +268,8 @@ const opId = await WineryOperationRepo.createOperation(
 
 ### Goal
 AI collaboration in Grapefruit should amplify precision, not creativity. Every contribution must strengthen auditability.
+
+### Reminders
 
 Before making changes, explain what you will do first.
 You are working with the creator of the Grapefruit project, so be sure to align with their vision and terminology. I have deep domain knowledge and will review all changes carefully. Use me to provide any direction on specifics of the winery graph model or application logic especially around types and signatures.
