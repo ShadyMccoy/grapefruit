@@ -43,18 +43,21 @@ async function testTransfer() {
         from: 0,
         to: 1,
         qty: 50,
+        unit: "gal",
         composition: { varietals: { chardonnay: 50 }, realDollars: 250, nominalDollars: 240 }
       },
       {
         from: 0,
         to: 0,
         qty: -50,
+        unit: "gal",
         composition: { varietals: { chardonnay: -50 }, realDollars: -250, nominalDollars: -240 }
       },
       {
         from: 1,
         to: 1,
         qty: 0,
+        unit: "gal",
         composition: { }
       }
     ]

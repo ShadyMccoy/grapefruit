@@ -40,6 +40,8 @@ export interface FlowSpec {
   from: number; // Index into inputStateIds
   to: number;   // Index into outputSpecs
   qty: number;
+  unit: "gal" | "lbs" | "$"; // Unit of measure for the flow
   composition: Composition; // The specific composition portion being transferred
+  deltaTime?: number; // Optional time delta in seconds
 }
 
