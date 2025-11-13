@@ -1,4 +1,5 @@
 import { BaseNode } from "./BaseNode";
+import { Composition } from "./ContainerState";
 
 export interface Appellation extends BaseNode {
   name: string;
@@ -26,4 +27,5 @@ export interface WeighTag extends BaseNode {
   weightLbs: number;
   vintage: number;
   blockId?: string; // link to block
+  composition: Composition;
 }
