@@ -1,8 +1,56 @@
 # 🔧 Core Layer: Invariants & Validation
 
-The core layer is where the algorithmic implements Grapefruit's business rules and mathematical integrity. It provides utilities for composition calculations, invariant validation, and operation algebra—ensuring conservation of quantities, dollars, and lineage across winery transformations.
+The core layer implements Grapefruit's business rules and mathematical integrity. It provides utilities for composition calculations, invariant validation, and operation algebra—ensuring conservation of quantities, dollars, and lineage across winery transformations.
 
-This layer sits between the domain (abstract models, see [domain/README.md](../domain/README.md)) and DB (persistence, see [db/README.md](../db/README.md)), turning business concepts into concrete numerical representations..
+This layer sits between the domain (abstract models, see [domain/README.md](../domain/README.md)) and DB (persistence, see [db/README.md](../db/README.md)), turning business concepts into concrete numerical representations.
+
+---
+
+## 🔒 Invariants
+
+The `Invariants` class enforces critical business rules before operations are committed to the database. All invariants use a delta-based flow model where net flows from each input state must sum to zero.
+
+### Implemented Invariants
+
+#### 1. Single Current State per Container
+**Method**: `assertSingleCurrentState(containerId: string)`  
+**Purpose**: Ensures each container has exactly one CURRENT_STATE pointer  
+**Why**: Prevents timeline ambiguity and data corruption
+
+#### 2. Input States Must Be Current
+**Method**: `assertInputStatesAreCurrent(inputStateIds: string[])`  
+**Purpose**: Validates all input states have no outgoing FLOW_TO relationships  
+**Why**: Operations should only consume head states, not historical intermediates
+
+#### 3. Quantity Conservation
+**Method**: `assertQuantityConservation(operation: WineryOperation)`  
+**Purpose**: Validates net flows from each input sum to zero (delta model)  
+**Why**: Ensures physical quantities are balanced across transformations
+
+#### 4. Composition Conservation
+**Method**: `assertCompositionConservation(operation: WineryOperation)`  
+**Purpose**: Validates varietals and dollar deltas net to zero for each input  
+**Why**: Ensures composition attributes are properly distributed
+
+#### 5. Nominal Dollar Conservation
+**Method**: `assertNominalDollarConservation(operation: WineryOperation)`  
+**Purpose**: Validates nominal dollars balance across entire operation  
+**Why**: Critical for accounting integrity; nominal dollars must ALWAYS balance
+
+#### 6. Valid Flow Indices
+**Method**: `assertValidFlowIndices(operation: WineryOperation)`  
+**Purpose**: Validates flow from/to indices are within bounds  
+**Why**: Prevents index out-of-bounds errors when creating relationships
+
+### Batch Validation
+
+**Method**: `validateOperation(operation: WineryOperation)`  
+Runs all invariant checks and returns only violations. Used by `WineryOperationService.createOperation()` to validate before database commit.
+
+### Removed Invariants
+
+- **`assertSinglePredecessor`**: Removed because blend operations create states with multiple incoming FLOW_TO relationships from different containers, which is valid and expected behavior.
+- **`assertVolumeBalance`**: Replaced with `assertQuantityConservation` using correct property names and delta model.
 
 ---
 
