@@ -1,6 +1,7 @@
 import { getDriver } from "../client";
 import { WineryOperation } from "../../domain/nodes/WineryOperation";
 import { ContainerState } from "../../domain/nodes/ContainerState";
+import { FlowToProps } from "../../domain/relationships/Flow_to";
 
 export class WineryOperationRepo {
   static async createOperation(op: WineryOperation): Promise<string> {
@@ -46,14 +47,15 @@ export class WineryOperationRepo {
           DELETE old
           CREATE (c)-[:CURRENT_STATE]->(out)
           WITH op, inStates, collect(out) AS outStates, flows
-          // Create lineage FLOW_TO by index
+          // Intent: Create lineage FLOW_TO relationships using FlowToProps type structure
+          // Reasoning: FLOW_TO properties (qty, unit, composition, deltaTime) align with domain model
           UNWIND flows AS f
           WITH op, inStates, outStates, f
           WITH op, inStates[toInteger(f.from)] AS fromState, outStates[toInteger(f.to)] AS toState, f
           CREATE (fromState)-[:FLOW_TO {
             qty: toInteger(f.qty),
-            nominalDollars: toInteger(f.nominalDollars),
-            realDollars: toInteger(f.realDollars),
+            unit: f.unit,
+            composition: f.composition,
             deltaTime: duration({seconds: toInteger(f.deltaTime)})
           }]->(toState)
           WITH op
@@ -78,9 +80,9 @@ export class WineryOperationRepo {
             from: f.from,
             to: f.to,
             qty: f.qty,
-            nominalDollars: f.composition?.nominalDollars ?? 0,
-            realDollars: f.composition?.realDollars ?? 0,
-            deltaTime: (f as any).deltaTime ?? 0
+            unit: f.unit,
+            composition: JSON.stringify(f.composition),
+            deltaTime: f.deltaTime ?? 0
           }))
         };
 

@@ -84,9 +84,9 @@ export class WineryOperationService {
         }
       ],
       flows: [
-        { from: 0, to: 1, qty: qty, composition: { varietals: transferVarietals, realDollars: transferReal, nominalDollars: transferNominal } },
-        { from: 0, to: 0, qty: -qty, composition: { varietals: scaleVarietals(transferVarietals, -1), realDollars: -transferReal, nominalDollars: -transferNominal } },
-        { from: 1, to: 1, qty: 0, composition: {} }
+        { from: 0, to: 1, qty: qty, unit: fromState.unit, composition: { varietals: transferVarietals, realDollars: transferReal, nominalDollars: transferNominal } },
+        { from: 0, to: 0, qty: -qty, unit: fromState.unit, composition: { varietals: scaleVarietals(transferVarietals, -1), realDollars: -transferReal, nominalDollars: -transferNominal } },
+        { from: 1, to: 1, qty: 0, unit: toState.unit, composition: {} }
       ]
     };
 

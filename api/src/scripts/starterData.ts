@@ -48,8 +48,8 @@ export const starterData: StarterData = {
       createdAt: new Date(),
       inputStateIds: ["state_tankA_initial", "state_tankB_initial"],
       flows: [
-        { from: 0, to: 0, qty: 1000, composition: { varietals: { chardonnay: 1000 }, realDollars: 5000, nominalDollars: 4800 } }, // 1000 gal from tankA to output 0
-        { from: 1, to: 0, qty: 800, composition: { varietals: { pinot: 800 }, realDollars: 4000, nominalDollars: 3900 } }  // 800 gal from tankB to output 0
+        { from: 0, to: 0, qty: 1000, unit: "gal", composition: { varietals: { chardonnay: 1000 }, realDollars: 5000, nominalDollars: 4800 } }, // 1000 gal from tankA to output 0
+        { from: 1, to: 0, qty: 800, unit: "gal", composition: { varietals: { pinot: 800 }, realDollars: 4000, nominalDollars: 3900 } }  // 800 gal from tankB to output 0
       ],
       outputContainerId: "tankA", // Result goes to tankA
     },
