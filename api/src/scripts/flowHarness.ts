@@ -365,9 +365,9 @@ function buildDirectTransferScenario2(): CompositionScenario {
 
   return {
     name: "remaing_after_partial_transfer",
-    inputStates: [TankA0.properties, TankB0.properties],
+    inputStates: [TankA0, TankB0],
     flows,
-    expectedCompositions: [TankA1.properties, TankB1.properties],
+    expectedCompositions: [TankA1, TankB1],
   };
 
 }
