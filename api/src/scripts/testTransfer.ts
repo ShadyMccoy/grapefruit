@@ -65,7 +65,7 @@ async function testTransfer() {
 
   try {
     console.log("Creating transfer operation...");
-    const result = await WineryOperationService.createOperation(transferOp);
+    const result = await WineryOperationService.validateAndCommitOperation(transferOp);
     console.log("Transfer operation created successfully:", result);
   } catch (error) {
     console.error("Transfer operation failed:", error);

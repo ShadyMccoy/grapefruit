@@ -1,3 +1,15 @@
+---
+# Fill in the fields below to create a basic custom agent for your repository.
+# The Copilot CLI can be used for local testing: https://gh.io/customagents/cli
+# To make this agent available, merge this file into the default repository branch.
+# For format details, see: https://gh.io/customagents/config
+
+name: HelloGithubAgent
+description: Basic project instructions for ai collaboration
+---
+
+# Github Agent
+
 # Grapefruit Copilot Instructions
 
 ## Project Overview
@@ -17,7 +29,7 @@ Grapefruit is a **winery traceability system** modeling the cellar as a **direct
 - **Loss containers**: Virtual containers for both gains (negative qtys) and losses (positive qtys); adjust real $ while preserving nominal $ conservation
 
 ### Invariants (see `api/src/core/Invariants.ts`)
-**Note**: Invariants module exists but logic is currently commented out pending ontology finalization. Focus on getting domain model right first.
+Invariants are implemented and enforced in `WineryOperationService.validateAndCommitOperation()` to ensure mathematical integrity before database commits.
 
 ## Architecture
 
@@ -48,8 +60,8 @@ interface BaseNode {
 - ✅ Container type union: `"tank" | "barrel" | "bottle" | "loss"` - implemented
 - ✅ Volume in h-units (1 h-unit = 1/10,000 gallon), not `volumeLiters: number` - implemented
 - ✅ ContainerState has `realDollars` and `nominalDollars` properties - implemented
+- ✅ Invariants implemented and active
 - 🔄 Various type definitions in flux during ontology validation phase - ongoing
-- 📋 **Next:** Expand VocabNodes (WeighTags, Appellation, Vineyard, etc.)
 
 ## Development Workflow
 
@@ -148,7 +160,7 @@ Completed:
 - Invariants planned but currently commented out
 
 Immediate Next Steps:
-- **Type Expansion:** Complete domain types (WeighTags, expanded VocabNodes)
+- **Type Expansion:** Domain types expanded (WeighTags, Appellation, Vineyard, Varietal, Block)
 - **Data Scale Testing:** Expand seeding to larger datasets (10k, 100k, 100M operations)
 - **Operation Diversity:** Implement additional operation types beyond basic transfers
 - **Performance Validation:** Test query performance and scalability
@@ -159,34 +171,27 @@ Immediate Next Steps:
 ## Common Patterns
 
 ### Creating Operations
+Use `WineryOperationService.buildWineryOperation()` to construct operations from flows, then `validateAndCommitOperation()` to enforce invariants and persist.
+
 ```typescript
 // 1. Fetch current states
 const inputStates = await stateRepo.getCurrentStates([containerId1, containerId2]);
 
-// 2. Calculate balanced outputs
-const totalVolume = sum(inputStates.map(s => s.qty));
-
-// 3. Create new state(s)
-const newState = await stateRepo.createState({
-  containerId: outputContainerId,
-  qty: totalVolume,
-  unit: 'gal',
-  composition: {
-    varietals: { /* blended composition */ },
-    realDollars: sum(inputStates.map(s => s.composition.realDollars || 0)),
-    nominalDollars: sum(inputStates.map(s => s.composition.nominalDollars || 0))
-  },
+// 2. Build operation with flows
+const op = await WineryOperationService.buildWineryOperation({
+  id: 'op123',
+  tenantId: 'winery1',
+  createdAt: new Date(),
+  description: 'Blend tanks',
+  fromContainers: inputStates,
+  flowQuantities: [
+    { fromStateId: inputStates[0].id, toStateId: containerId2, qty: 500 },
+    { fromStateId: inputStates[1].id, toStateId: containerId2, qty: 300 }
+  ]
 });
 
-// 4. Create operation linking states
-const op = await opRepo.createOperation({
-  type: 'blend',
-  inputs: inputStates,
-  outputs: [newState],
-});
-
-// 5. Validate invariants (when implemented)
-await invariants.validateOperation(op);
+// 3. Validate and commit
+const committedOp = await WineryOperationService.validateAndCommitOperation(op);
 ```
 
 ### Handling Losses

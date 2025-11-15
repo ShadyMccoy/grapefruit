@@ -7,34 +7,34 @@ async function run() {
 
   try {
     console.log("Building op 1: 50 from tankA to tankB...");
-    const op1 = await WineryOperationService.buildTransferOperation({
+    const op1 = await WineryOperationService.buildWineryOperation({
       id: "transfer_seq_001",
       tenantId,
       fromContainerId: "tankA",
       toContainerId: "tankB",
-      qty: 50,
+      flowQuantities: 50,
       createdAt: createdAt1,
       description: "Seq1: 50 A->B"
     });
     console.log("Creating op 1...");
-    const res1 = await WineryOperationService.createOperation(op1);
+    const res1 = await WineryOperationService.validateAndCommitOperation(op1);
     console.log("Op1 created:", res1.id);
 
     // Slightly later timestamp for ordering determinism
     const createdAt2 = new Date(createdAt1.getTime() + 1000);
 
     console.log("Building op 2: 100 from tankB to tankA...");
-    const op2 = await WineryOperationService.buildTransferOperation({
+    const op2 = await WineryOperationService.buildWineryOperation({
       id: "transfer_seq_002",
       tenantId,
       fromContainerId: "tankB",
       toContainerId: "tankA",
-      qty: 100,
+      flowQuantities: 100,
       createdAt: createdAt2,
       description: "Seq2: 100 B->A"
     });
     console.log("Creating op 2...");
-    const res2 = await WineryOperationService.createOperation(op2);
+    const res2 = await WineryOperationService.validateAndCommitOperation(op2);
     console.log("Op2 created:", res2.id);
   } catch (err) {
     console.error("Sequence failed:", err);

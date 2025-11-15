@@ -11,18 +11,18 @@ async function run() {
 
   try {
     console.log("Building transfer operation dynamically...");
-    const op = await WineryOperationService.buildTransferOperation({
+    const op = await WineryOperationService.buildWineryOperation({
       id,
       tenantId,
       fromContainerId,
       toContainerId,
-      qty,
+      flowQuantities: qty,
       createdAt,
       description: `Transfer ${qty} from ${fromContainerId} to ${toContainerId}`
     });
 
     console.log("Creating operation...");
-    const result = await WineryOperationService.createOperation(op);
+    const result = await WineryOperationService.validateAndCommitOperation(op);
     console.log("Dynamic transfer created:", result);
   } catch (err) {
     console.error("Dynamic transfer failed:", err);

@@ -1,144 +1,77 @@
-import { WineryOperation } from "../domain/nodes/WineryOperation";
+import { WineryOperation, OperationType } from "../domain/nodes/WineryOperation";
 import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
 import { FlowToRelationship } from "../domain/relationships/Flow_to";
 import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
 import { ContainerRepo } from "../db/repositories/ContainerRepo";
 import { getDriver } from "../db/client";
+import { Container } from "../domain/nodes/Container";
+import { generateFlowCompositions } from "./CompositionHelpers";
 
 export class WineryOperationService {
-  // Intent: Build a transfer WineryOperation dynamically from container IDs and qty.
-  // Reasoning: Use CURRENT_STATE (or fallback to head with no outgoing FLOW_TO) to derive inputs and compositions.
-  static async buildTransferOperation(params: {
-    id: string;
-    tenantId: string;
-    fromContainerId: string;
-    toContainerId: string;
-    qty: number; // h-units (here using gallons as seeded)
-    createdAt: Date;
-    description?: string;
-  }): Promise<WineryOperation> {
-    const { id, tenantId, fromContainerId, toContainerId, qty, createdAt, description } = params;
+  // Intent: Build a transfer WineryOperation based on flows
+  // Accepts N containers and flow quantities between them
+  // Generates new output states and flow relationships accordingly
+  static async buildWineryOperation(params: {
+      id: string;
+      tenantId: string;
+      createdAt: Date;
+      type: OperationType;
+      description?: string;
+      fromContainers: ContainerState[];
+      flowQuantities: { fromStateId: string; toStateId: string; qty: number }[];
+    }): Promise<WineryOperation> {
+      // copy input states to new output states
+      const toContainers: ContainerState[] = params.fromContainers.map(state => ({
+        id: crypto.randomUUID(),
+        tenantId: params.tenantId,
+        createdAt: params.createdAt,
+        container: state.container,
+        quantifiedComposition: state.quantifiedComposition,
+        timestamp: params.createdAt,
+        flowsTo: [],
+        flowsFrom: []
+      }));
 
-    // Fetch current (head) states for from/to containers
-    const [fromState, toState] = await Promise.all([
-      this.getHeadState(fromContainerId),
-      this.getHeadState(toContainerId)
-    ]);
-
-    if (!fromState) throw new Error(`No current state found for container ${fromContainerId}`);
-    if (!toState) throw new Error(`No current state found for container ${toContainerId}`);
-
-    // Compute dollars per unit from the source (fromState)
-    const fromRealPerUnit = (fromState.quantifiedComposition.realDollars || 0) / (fromState.quantifiedComposition.qty || 1);
-    const fromNominalPerUnit = (fromState.quantifiedComposition.nominalDollars || 0) / (fromState.quantifiedComposition.qty || 1);
-    const transferReal = Math.round(fromRealPerUnit * qty);
-    const transferNominal = Math.round(fromNominalPerUnit * qty);
-
-    // Compute varietal split for transfer based on source composition
-    const transferVarietals: Record<string, number> = {};
-    if (fromState.quantifiedComposition.varietals) {
-      const totalVol = fromState.quantifiedComposition.qty || 1;
-      for (const [varietal, amount] of Object.entries(fromState.quantifiedComposition.varietals)) {
-        const portion = (amount / totalVol) * qty;
-        transferVarietals[varietal] = Math.round(portion);
+      // iterate over flow quantities and add a new flow relationship objects to each input state
+      for (const flow of params.flowQuantities) {
+        const fromState = params.fromContainers.find(s => s.id === flow.fromStateId);
+        const toState = toContainers.find(s => s.container.id === flow.toStateId);
+        if (fromState && toState) {
+          fromState.flowsTo.push({
+            from: { id: fromState.id },
+            to: { id: toState.id },
+            properties: {
+              qty: flow.qty,
+              unit: fromState.quantifiedComposition.unit
+            }
+          });
+          toState.flowsFrom.push(fromState.flowsTo[fromState.flowsTo.length - 1]);
+        }
       }
+
+      //iterate over each input state to calculate the composition of each flows to
+      for (const fromState of params.fromContainers) {
+        generateFlowCompositions(
+          fromState.quantifiedComposition,
+          fromState.flowsTo)
+        ;
+      }
+
+      // create the operation object
+      const op: WineryOperation = {
+        id: params.id,
+        tenantId: params.tenantId,
+        createdAt: params.createdAt,
+        type: params.type,
+        description: params.description,
+        inputStates: params.fromContainers,
+        outputStates: toContainers
+      };
+
+      return op;
     }
 
-    // Build outputs
-    const outFromQty = fromState.quantifiedComposition.qty - qty;
-    const outFromComp: Partial<QuantifiedComposition> = {
-      varietals: mergeVarietals(fromState.quantifiedComposition.varietals, scaleVarietals(transferVarietals, -1)),
-      realDollars: (fromState.quantifiedComposition.realDollars || 0) - transferReal,
-      nominalDollars: (fromState.quantifiedComposition.nominalDollars || 0) - transferNominal
-    };
-
-    const outToQty = toState.quantifiedComposition.qty + qty;
-    const outToComp: Partial<QuantifiedComposition> = {
-      varietals: mergeVarietals(toState.quantifiedComposition.varietals, transferVarietals),
-      realDollars: (toState.quantifiedComposition.realDollars || 0) + transferReal,
-      nominalDollars: (toState.quantifiedComposition.nominalDollars || 0) + transferNominal
-    };
-
-    // Build output states
-    const outFromState: ContainerState = {
-      id: `${id}__${fromState.container.id}`,
-      tenantId,
-      createdAt,
-      timestamp: createdAt,
-      container: fromState.container,
-      quantifiedComposition: {
-        qty: outFromQty,
-        unit: fromState.quantifiedComposition.unit,
-        varietals: outFromComp.varietals,
-        realDollars: outFromComp.realDollars,
-        nominalDollars: outFromComp.nominalDollars
-      }
-    };
-
-    const outToState: ContainerState = {
-      id: `${id}__${toState.container.id}`,
-      tenantId,
-      createdAt,
-      timestamp: createdAt,
-      container: toState.container,
-      quantifiedComposition: {
-        qty: outToQty,
-        unit: toState.quantifiedComposition.unit,
-        varietals: outToComp.varietals,
-        realDollars: outToComp.realDollars,
-        nominalDollars: outToComp.nominalDollars
-      }
-    };
-
-    // Assemble WineryOperation
-    const op: WineryOperation = {
-      id,
-      type: "transfer",
-      tenantId,
-      createdAt,
-      description,
-      inputStates: [fromState, toState],
-      outputStates: [outFromState, outToState],
-      flows: [
-        { 
-          from: { id: fromState.id },
-          to: { id: outToState.id },
-          properties: {
-            qty: qty,
-            unit: fromState.quantifiedComposition.unit,
-            varietals: transferVarietals,
-            realDollars: transferReal,
-            nominalDollars: transferNominal
-          }
-        },
-        { 
-          from: { id: fromState.id },
-          to: { id: outFromState.id },
-          properties: {
-            qty: -qty,
-            unit: fromState.quantifiedComposition.unit,
-            varietals: scaleVarietals(transferVarietals, -1),
-            realDollars: -transferReal,
-            nominalDollars: -transferNominal
-          }
-        },
-        { 
-          from: { id: toState.id },
-          to: { id: outToState.id },
-          properties: {
-            qty: 0,
-            unit: toState.quantifiedComposition.unit,
-            varietals: {},
-            realDollars: 0,
-            nominalDollars: 0
-          }
-        }
-      ]
-    };
-
-    return op;
-  }
-  static async createOperation(operation: WineryOperation): Promise<WineryOperation> {
+  static async validateAndCommitOperation(operation: WineryOperation): Promise<WineryOperation> {
     // Intent: Validate operation against all invariants before committing to database
     // Reasoning: Ensures mathematical integrity and prevents invalid state transitions
     const { Invariants } = await import("./Invariants");
@@ -189,6 +122,11 @@ export class WineryOperationService {
     const driver = getDriver();
     const session = driver.session();
     try {
+      // First, get the container
+      const containerRepo = new ContainerRepo(session);
+      const container = await containerRepo.findById(containerId);
+      if (!container) return null;
+
       const res = await session.executeRead(async (tx) => {
         return await tx.run(
           `
@@ -213,9 +151,10 @@ export class WineryOperationService {
       const qtyNum = s.qty && typeof s.qty.toNumber === 'function' ? s.qty.toNumber() : (typeof s.qty === 'bigint' ? Number(s.qty) : (s.qty as number));
       const comp = s.composition ? JSON.parse(s.composition) : {};
       return {
-        ...s,
-        timestamp: new Date(s.timestamp),
+        id: s.id,
+        tenantId: s.tenantId,
         createdAt: new Date(s.createdAt),
+        container: container,
         quantifiedComposition: {
           qty: qtyNum,
           unit: s.unit || 'gal',
@@ -223,7 +162,9 @@ export class WineryOperationService {
           realDollars: comp.realDollars,
           nominalDollars: comp.nominalDollars
         },
-        container: { id: containerId } as any
+        timestamp: new Date(s.timestamp),
+        flowsTo: [],
+        flowsFrom: []
       } as ContainerState;
     } finally {
       await session.close();

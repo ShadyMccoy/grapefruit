@@ -2,6 +2,7 @@
 // These utilities calculate flow compositions using exact integer math with deterministic rounding
 
 import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
+import { FlowToRelationship } from "../domain/relationships/Flow_to";
 
 /**
  * Calculates the composition of a flow based on the input state and flow quantity.
@@ -118,8 +119,8 @@ export function compositionsEqual(a: QuantifiedComposition, b: QuantifiedComposi
  */
 export function generateFlowCompositions(
   fromComposition: QuantifiedComposition,
-  transferQty: number
-): QuantifiedComposition[] {
+  flows: FlowToRelationship[]
+) : void {
   // Create a temporary ContainerState for calculation
   const tempState: ContainerState = {
     id: 'temp',

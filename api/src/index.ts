@@ -44,7 +44,7 @@ app.post("/api/operations", async (req: Request, res: Response) => {
     }
 
     // Create the operation
-    const createdOperation = await WineryOperationService.createOperation(operation);
+    const createdOperation = await WineryOperationService.validateAndCommitOperation(operation);
 
     res.json(createdOperation);
   } catch (error) {

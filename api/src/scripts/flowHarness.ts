@@ -75,6 +75,10 @@ const scenarios: CompositionScenario[] = [
     503, { chardonnay: 503 }, 2500, 2400,
     300, { pinot_noir: 300 }, 1800, 1500
   ),
+  buildBlendScenario(
+    1, { chardonnay: 1 }, 10, 10,
+    0, { pinot_noir: 0 }, 0, 0
+  ),
   buildBlendIntoNonEmptyTankScenario(
     400, { chardonnay: 400 }, 2000, 1920,
     200, { pinot_noir: 200 }, 1200, 1000,
@@ -410,10 +414,10 @@ function buildGeneratedTransferScenario(
   nominalA: number,
   transferQty: number
 ): CompositionScenario {
-  const tankA = createContainer("tankA_gen", "Tank A Generated");
-  const tankB = createContainer("tankB_gen", "Tank B Generated");
+  const tankA = createContainer("tankA", "Tank A");
+  const tankB = createContainer("tankB", "Tank B");
 
-  const TankA0 = createState("tankA0_gen", tankA, qtyA, varietalsA, realA, nominalA);
+  const TankA0 = createState("TankA0", tankA, qtyA, varietalsA, realA, nominalA);
   
   // Calculate remaining in tank A after transfer
   const remainingQty = qtyA - transferQty;
@@ -424,7 +428,7 @@ function buildGeneratedTransferScenario(
   const remainingReal = Math.floor((realA * remainingQty) / qtyA);
   const remainingNominal = Math.floor((nominalA * remainingQty) / qtyA);
   
-  const TankA1 = createState("tankA1_gen", tankA, remainingQty, remainingVarietals, remainingReal, remainingNominal);
+  const TankA1 = createState("TankA1", tankA, remainingQty, remainingVarietals, remainingReal, remainingNominal);
   
   // Calculate transferred amounts
   const transferredVarietals: Record<string, number> = {};
@@ -434,8 +438,8 @@ function buildGeneratedTransferScenario(
   const transferredReal = Math.floor((realA * transferQty) / qtyA);
   const transferredNominal = Math.floor((nominalA * transferQty) / qtyA);
   
-  const TankB0 = createState("tankB0_gen", tankB, 0, {}, 0, 0);
-  const TankB1 = createState("tankB1_gen", tankB, transferQty, transferredVarietals, transferredReal, transferredNominal);
+  const TankB0 = createState("TankB0", tankB, 0, {}, 0, 0);
+  const TankB1 = createState("TankB1", tankB, transferQty, transferredVarietals, transferredReal, transferredNominal);
 
   return {
     name: "generated_transfer_with_helper",
