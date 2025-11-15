@@ -34,9 +34,9 @@ async function testInvariants() {
     ],
     flows: [
       // Valid delta flows: net zero for each input
-      { from: 0, to: 1, qty: 50, composition: { realDollars: 250, nominalDollars: 240 } },
-      { from: 0, to: 0, qty: -50, composition: { realDollars: -250, nominalDollars: -240 } },
-      { from: 1, to: 1, qty: 0, composition: { realDollars: 0, nominalDollars: 0 } }
+      { from: 0, to: 1, qty: 50, unit: "gal", composition: { realDollars: 250, nominalDollars: 240 } },
+      { from: 0, to: 0, qty: -50, unit: "gal", composition: { realDollars: -250, nominalDollars: -240 } },
+      { from: 1, to: 1, qty: 0, unit: "gal", composition: { realDollars: 0, nominalDollars: 0 } }
     ]
   };
 
@@ -71,7 +71,7 @@ async function testInvariants() {
     ],
     flows: [
       // Invalid: net flow from input 0 is not zero (50 instead of 0)
-      { from: 0, to: 0, qty: 50, composition: { realDollars: 250, nominalDollars: 240 } }
+      { from: 0, to: 0, qty: 50, unit: "gal", composition: { realDollars: 250, nominalDollars: 240 } }
     ]
   };
 
@@ -97,8 +97,8 @@ async function testInvariants() {
     ],
     flows: [
       // Invalid: net composition doesn't sum to zero
-      { from: 0, to: 0, qty: 50, composition: { realDollars: 250, nominalDollars: 240 } },
-      { from: 0, to: 0, qty: -50, composition: { realDollars: -200, nominalDollars: -240 } } // Wrong real dollars
+      { from: 0, to: 0, qty: 50, unit: "gal", composition: { realDollars: 250, nominalDollars: 240 } },
+      { from: 0, to: 0, qty: -50, unit: "gal", composition: { realDollars: -200, nominalDollars: -240 } } // Wrong real dollars
     ]
   };
 
@@ -124,7 +124,7 @@ async function testInvariants() {
     ],
     flows: [
       // Invalid: from index 5 doesn't exist (only 0 exists)
-      { from: 5, to: 0, qty: 0, composition: {} }
+      { from: 5, to: 0, qty: 0, unit: "gal", composition: {} }
     ]
   };
 
@@ -150,7 +150,7 @@ async function testInvariants() {
     ],
     flows: [
       // Invalid: nominal dollars don't net to zero (100 instead of 0)
-      { from: 0, to: 0, qty: 0, composition: { realDollars: 0, nominalDollars: 100 } }
+      { from: 0, to: 0, qty: 0, unit: "gal", composition: { realDollars: 0, nominalDollars: 100 } }
     ]
   };
 
