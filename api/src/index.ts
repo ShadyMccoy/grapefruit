@@ -1,12 +1,11 @@
 import express, { Request, Response } from "express";
 import { WineryOperation } from "./domain/nodes/WineryOperation";
 import { WineryOperationService } from "./core/WineryOperationService";
+import { ContainerState } from "./domain/nodes/ContainerState";
 import {
   calculateFlowComposition,
   calculateBlendComposition,
-  validateFlows,
-  generateTransferFlows,
-  ContainerState as HelperContainerState
+  generateFlowCompositions
 } from "./core/CompositionHelpers";
 
 import dotenv from "dotenv";
@@ -59,7 +58,7 @@ app.post("/api/operations", async (req: Request, res: Response) => {
 // Composition calculation helpers for front-end
 app.post("/api/composition/calculate-flow", async (req: Request, res: Response) => {
   try {
-    const { inputState, flowQty }: { inputState: HelperContainerState; flowQty: number } = req.body;
+    const { inputState, flowQty }: { inputState: ContainerState; flowQty: number } = req.body;
 
     if (!inputState || flowQty === undefined) {
       return res.status(400).json({ error: "Missing inputState or flowQty" });
@@ -74,29 +73,14 @@ app.post("/api/composition/calculate-flow", async (req: Request, res: Response) 
 
 app.post("/api/composition/calculate-blend", async (req: Request, res: Response) => {
   try {
-    const { flows } = req.body;
+    const { incomingState, flows } = req.body;
 
-    if (!flows || !Array.isArray(flows)) {
-      return res.status(400).json({ error: "Missing or invalid flows array" });
+    if (!incomingState || !flows || !Array.isArray(flows)) {
+      return res.status(400).json({ error: "Missing or invalid incomingState or flows array" });
     }
 
-    const composition = calculateBlendComposition(flows);
+    const composition = calculateBlendComposition(incomingState, flows);
     res.json({ composition });
-  } catch (error) {
-    res.status(400).json({ error: (error as Error).message });
-  }
-});
-
-app.post("/api/composition/validate-flows", async (req: Request, res: Response) => {
-  try {
-    const { inputStates, flows } = req.body;
-
-    if (!inputStates || !flows) {
-      return res.status(400).json({ error: "Missing inputStates or flows" });
-    }
-
-    const validation = validateFlows(inputStates, flows);
-    res.json(validation);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }
@@ -104,13 +88,13 @@ app.post("/api/composition/validate-flows", async (req: Request, res: Response) 
 
 app.post("/api/composition/generate-transfer", async (req: Request, res: Response) => {
   try {
-    const { fromState, toState, transferQty } = req.body;
+    const { fromComposition, transferQty } = req.body;
 
-    if (!fromState || !toState || transferQty === undefined) {
-      return res.status(400).json({ error: "Missing fromState, toState, or transferQty" });
+    if (!fromComposition || transferQty === undefined) {
+      return res.status(400).json({ error: "Missing fromComposition or transferQty" });
     }
 
-    const flows = generateTransferFlows(fromState, toState, transferQty);
+    const flows = generateFlowCompositions(fromComposition, transferQty);
     res.json({ flows });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });

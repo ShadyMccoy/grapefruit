@@ -1,7 +1,7 @@
 import { Container } from "../domain/nodes/Container";
 import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
 import { FlowToRelationship } from "../domain/relationships/Flow_to";
-import { generateTransferFlows } from "../core/CompositionHelpers";
+import { generateFlowCompositions, calculateBlendComposition } from "../core/CompositionHelpers";
 
 interface CompositionScenario {
   name: string;
@@ -14,9 +14,72 @@ interface CompositionScenario {
 const HARNESS_TENANT = "harness_tenant";
 const ZERO_TIME = new Date("2000-01-01T00:00:00.000Z");
 
+// Helper functions to reduce boilerplate in scenario definitions
+function createContainer(id: string, name: string, type: Container["type"] = "tank"): Container {
+  return {
+    id,
+    tenantId: HARNESS_TENANT,
+    createdAt: ZERO_TIME,
+    name,
+    type,
+  };
+}
+
+function createState(
+  id: string,
+  container: Container,
+  qty: number,
+  varietals: Record<string, number> = {},
+  realDollars: number = 0,
+  nominalDollars: number = 0,
+  unit: "gal" | "lbs" | "$" = "gal"
+): ContainerState {
+  return {
+    id,
+    tenantId: HARNESS_TENANT,
+    createdAt: ZERO_TIME,
+    container,
+    quantifiedComposition: {
+      qty,
+      unit,
+      varietals,
+      realDollars,
+      nominalDollars,
+    },
+    timestamp: ZERO_TIME,
+  };
+}
+
 const scenarios: CompositionScenario[] = [
-  buildDirectTransferScenario2(),
-  buildGeneratedTransferScenario()
+  buildDirectTransferScenario(
+    1000, { chardonnay: 1000 }, 5000, 4800,
+    100
+  ),
+  buildGeneratedTransferScenario(
+    1000, { chardonnay: 1000 }, 5000, 4800,
+    100
+  ),
+  buildBlendScenario(
+    500, { chardonnay: 500 }, 2500, 2400,
+    300, { pinot_noir: 300 }, 1800, 1500
+  ),
+  buildBlendScenario(
+    501, { chardonnay: 501 }, 2500, 2400,
+    300, { pinot_noir: 300 }, 1800, 1500
+  ),
+  buildBlendScenario(
+    502, { chardonnay: 502 }, 2500, 2400,
+    300, { pinot_noir: 300 }, 1800, 1500
+  ),
+  buildBlendScenario(
+    503, { chardonnay: 503 }, 2500, 2400,
+    300, { pinot_noir: 300 }, 1800, 1500
+  ),
+  buildBlendIntoNonEmptyTankScenario(
+    400, { chardonnay: 400 }, 2000, 1920,
+    200, { pinot_noir: 200 }, 1200, 1000,
+    200, { merlot: 200 }, 900, 800
+  )
 ];
 
 runHarness(scenarios).catch((error) => {
@@ -272,196 +335,321 @@ function assertApproxEqual(label: string, actual: number, expected: number) {
 }
 
   
-function buildDirectTransferScenario2(): CompositionScenario {
-  const tankA: Container = {
-    id: "tankA",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    name: "Tank A",
-    type: "tank",
-  };
+function buildDirectTransferScenario(
+  qtyA: number,
+  varietalsA: Record<string, number>,
+  realA: number,
+  nominalA: number,
+  transferQty: number
+): CompositionScenario {
+  const tankA = createContainer("tankA", "Tank A");
+  const tankB = createContainer("tankB", "Tank B");
 
-  const tankB: Container = {
-    id: "tankB",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    name: "Tank B",
-    type: "tank",
-  };
-
-  const TankA0: ContainerState = {
-    id: "tankA0",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    container: tankA,
-    quantifiedComposition: {
-      qty: 1000,
-      unit: "gal",
-      varietals: { chardonnay: 1000 },
-      realDollars: 5000,
-      nominalDollars: 4800,
-    },
-    timestamp: ZERO_TIME,
-  };
-
-  const TankA1: ContainerState = {
-    id: "tankA1",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    container: tankA,
-    quantifiedComposition: {
-      qty: 900,
-      unit: "gal",
-      varietals: { chardonnay: 900 },
-      realDollars: 4500,
-      nominalDollars: 4320,
-    },
-    timestamp: ZERO_TIME,
-  };
-
-  const TankB0: ContainerState = {
-    id: "tankB0",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    container: tankB,
-    quantifiedComposition: {
-      qty: 0,
-      unit: "gal",
-      varietals: { },
-      realDollars: 0,
-      nominalDollars: 0,
-    },
-    timestamp: ZERO_TIME,
-  };
-
-  const TankB1: ContainerState = {
-    id: "tankB1",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    container: tankB,
-    quantifiedComposition: {
-      qty: 100,
-      unit: "gal",
-      varietals: { chardonnay: 100 },
-      realDollars: 500,
-      nominalDollars: 480,
-    },
-    timestamp: ZERO_TIME,
-  };
+  const TankA0 = createState("tankA0", tankA, qtyA, varietalsA, realA, nominalA);
+  
+  // Calculate remaining in tank A after transfer
+  const remainingQty = qtyA - transferQty;
+  const remainingVarietals: Record<string, number> = {};
+  for (const [varietal, amount] of Object.entries(varietalsA)) {
+    remainingVarietals[varietal] = Math.floor((amount * remainingQty) / qtyA);
+  }
+  const remainingReal = Math.floor((realA * remainingQty) / qtyA);
+  const remainingNominal = Math.floor((nominalA * remainingQty) / qtyA);
+  
+  const TankA1 = createState("tankA1", tankA, remainingQty, remainingVarietals, remainingReal, remainingNominal);
+  
+  // Calculate transferred amounts
+  const transferredVarietals: Record<string, number> = {};
+  for (const [varietal, amount] of Object.entries(varietalsA)) {
+    transferredVarietals[varietal] = Math.floor((amount * transferQty) / qtyA);
+  }
+  const transferredReal = Math.floor((realA * transferQty) / qtyA);
+  const transferredNominal = Math.floor((nominalA * transferQty) / qtyA);
+  
+  const TankB0 = createState("tankB0", tankB, 0, {}, 0, 0);
+  const TankB1 = createState("tankB1", tankB, transferQty, transferredVarietals, transferredReal, transferredNominal);
 
   const flows: FlowToRelationship[] = [
     {
       from: { id: TankA0.id },
       to: { id: TankA1.id },
       properties: {
-        qty: -100,
+        qty: -transferQty,
         unit: "gal",
-        varietals: { chardonnay: -100 },
-        realDollars: -500,
-        nominalDollars: -480,
+        varietals: Object.fromEntries(
+          Object.entries(transferredVarietals).map(([k, v]) => [k, -v])
+        ),
+        realDollars: -transferredReal,
+        nominalDollars: -transferredNominal,
       },
     },{
       from: { id: TankA0.id },
       to: { id: TankB1.id },
       properties: {
-        qty: 100,
+        qty: transferQty,
         unit: "gal",
-        varietals: { chardonnay: 100 },
-        realDollars: 500,
-        nominalDollars: 480,
+        varietals: transferredVarietals,
+        realDollars: transferredReal,
+        nominalDollars: transferredNominal,
       },
     },
   ];
 
   return {
-    name: "remaing_after_partial_transfer",
+    name: "remaining_after_partial_transfer",
     inputStates: [TankA0, TankB0],
     flows,
     expectedCompositions: [TankA1, TankB1],
   };
 }
 
-function buildGeneratedTransferScenario(): CompositionScenario {
-  const tankA: Container = {
-    id: "tankA_gen",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    name: "Tank A Generated",
-    type: "tank",
-  };
+function buildGeneratedTransferScenario(
+  qtyA: number,
+  varietalsA: Record<string, number>,
+  realA: number,
+  nominalA: number,
+  transferQty: number
+): CompositionScenario {
+  const tankA = createContainer("tankA_gen", "Tank A Generated");
+  const tankB = createContainer("tankB_gen", "Tank B Generated");
 
-  const tankB: Container = {
-    id: "tankB_gen",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    name: "Tank B Generated",
-    type: "tank",
-  };
-
-  const TankA0: ContainerState = {
-    id: "tankA0_gen",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    container: tankA,
-    quantifiedComposition: {
-      qty: 1000,
-      unit: "gal",
-      varietals: { chardonnay: 1000 },
-      realDollars: 5000,
-      nominalDollars: 4800,
-    },
-    timestamp: ZERO_TIME,
-  };
-
-  const TankA1: ContainerState = {
-    id: "tankA1_gen",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    container: tankA,
-    quantifiedComposition: {
-      qty: 900,
-      unit: "gal",
-      varietals: { chardonnay: 900 },
-      realDollars: 4500,
-      nominalDollars: 4320,
-    },
-    timestamp: ZERO_TIME,
-  };
-
-  const TankB0: ContainerState = {
-    id: "tankB0_gen",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    container: tankB,
-    quantifiedComposition: {
-      qty: 0,
-      unit: "gal",
-      varietals: {},
-      realDollars: 0,
-      nominalDollars: 0,
-    },
-    timestamp: ZERO_TIME,
-  };
-
-  const TankB1: ContainerState = {
-    id: "tankB1_gen",
-    tenantId: HARNESS_TENANT,
-    createdAt: ZERO_TIME,
-    container: tankB,
-    quantifiedComposition: {
-      qty: 100,
-      unit: "gal",
-      varietals: { chardonnay: 100 },
-      realDollars: 500,
-      nominalDollars: 480,
-    },
-    timestamp: ZERO_TIME,
-  };
+  const TankA0 = createState("tankA0_gen", tankA, qtyA, varietalsA, realA, nominalA);
+  
+  // Calculate remaining in tank A after transfer
+  const remainingQty = qtyA - transferQty;
+  const remainingVarietals: Record<string, number> = {};
+  for (const [varietal, amount] of Object.entries(varietalsA)) {
+    remainingVarietals[varietal] = Math.floor((amount * remainingQty) / qtyA);
+  }
+  const remainingReal = Math.floor((realA * remainingQty) / qtyA);
+  const remainingNominal = Math.floor((nominalA * remainingQty) / qtyA);
+  
+  const TankA1 = createState("tankA1_gen", tankA, remainingQty, remainingVarietals, remainingReal, remainingNominal);
+  
+  // Calculate transferred amounts
+  const transferredVarietals: Record<string, number> = {};
+  for (const [varietal, amount] of Object.entries(varietalsA)) {
+    transferredVarietals[varietal] = Math.floor((amount * transferQty) / qtyA);
+  }
+  const transferredReal = Math.floor((realA * transferQty) / qtyA);
+  const transferredNominal = Math.floor((nominalA * transferQty) / qtyA);
+  
+  const TankB0 = createState("tankB0_gen", tankB, 0, {}, 0, 0);
+  const TankB1 = createState("tankB1_gen", tankB, transferQty, transferredVarietals, transferredReal, transferredNominal);
 
   return {
     name: "generated_transfer_with_helper",
     inputStates: [TankA0, TankB0],
-    operation: (inputs) => generateTransferFlows(inputs[0], inputs[1], 100),
+    operation: (inputs) => {
+      const [negativeFlow, positiveFlow] = generateFlowCompositions(
+        inputs[0].quantifiedComposition,
+        transferQty
+      );
+
+      // Create flows manually with proper state IDs
+      return [
+        // Negative flow from TankA0 to TankA1 (what's leaving)
+        {
+          from: { id: TankA0.id },
+          to: { id: TankA1.id },
+          properties: negativeFlow
+        },
+        // Positive flow from TankA0 to TankB1 (what's arriving)
+        {
+          from: { id: TankA0.id },
+          to: { id: TankB1.id },
+          properties: positiveFlow
+        }
+      ];
+    },
     expectedCompositions: [TankA1, TankB1],
+  };
+}
+function buildBlendScenario(
+  qtyA: number,
+  varietalsA: Record<string, number>,
+  realA: number,
+  nominalA: number,
+  qtyB: number,
+  varietalsB: Record<string, number>,
+  realB: number,
+  nominalB: number
+): CompositionScenario {
+  // Intent: Blend two input tanks into one output tank using calculateBlendComposition
+  // Scenario: Tank A + Tank B → Tank C (empty → blend)
+  
+  const tankA = createContainer("tankA_blend", "Tank A Blend Source");
+  const tankB = createContainer("tankB_blend", "Tank B Blend Source");
+  const tankC = createContainer("tankC_blend", "Tank C Blend Destination");
+
+  const TankA0 = createState("tankA0_blend", tankA, qtyA, varietalsA, realA, nominalA);
+  const TankA1 = createState("tankA1_blend", tankA, 0, {}, 0, 0);
+  const TankB0 = createState("tankB0_blend", tankB, qtyB, varietalsB, realB, nominalB);
+  const TankB1 = createState("tankB1_blend", tankB, 0, {}, 0, 0);
+  const TankC0 = createState("tankC0_blend", tankC, 0, {}, 0, 0);
+  
+  // Calculate expected final composition
+  const mergedVarietals = { ...varietalsA };
+  for (const [varietal, amount] of Object.entries(varietalsB)) {
+    mergedVarietals[varietal] = (mergedVarietals[varietal] || 0) + amount;
+  }
+  const TankC1 = createState("tankC1_blend", tankC, qtyA + qtyB, mergedVarietals, realA + realB, nominalA + nominalB);
+
+  return {
+    name: "blend_two_tanks_with_helper",
+    inputStates: [TankA0, TankB0, TankC0],
+    operation: (inputs) => {
+      // Generate flows from each source tank to destination
+      const [negativeFlowA, positiveFlowA] = generateFlowCompositions(
+        inputs[0].quantifiedComposition,
+        qtyA
+      );
+      
+      const [negativeFlowB, positiveFlowB] = generateFlowCompositions(
+        inputs[1].quantifiedComposition,
+        qtyB
+      );
+
+      // Use calculateBlendComposition to determine final composition
+      // Start with empty tank C, add flows from A and B
+      const blendedComposition = calculateBlendComposition(
+        inputs[2], // TankC0 (empty destination)
+        [positiveFlowA, positiveFlowB] // Incoming flows from both tanks
+      );
+
+      // Verify the blend matches our expectation
+      if (blendedComposition.qty !== qtyA + qtyB) {
+        throw new Error(`Blend qty mismatch: expected ${qtyA + qtyB}, got ${blendedComposition.qty}`);
+      }
+
+      return [
+        // Negative flow from TankA0 to TankA1 (empty it)
+        {
+          from: { id: inputs[0].id },
+          to: { id: TankA1.id },
+          properties: negativeFlowA
+        },
+        // Positive flow from TankA0 to TankC1 (contributing to blend)
+        {
+          from: { id: inputs[0].id },
+          to: { id: TankC1.id },
+          properties: positiveFlowA
+        },
+        // Negative flow from TankB0 to TankB1 (empty it)
+        {
+          from: { id: inputs[1].id },
+          to: { id: TankB1.id },
+          properties: negativeFlowB
+        },
+        // Positive flow from TankB0 to TankC1 (contributing to blend)
+        {
+          from: { id: inputs[1].id },
+          to: { id: TankC1.id },
+          properties: positiveFlowB
+        }
+      ];
+    },
+    expectedCompositions: [TankA1, TankB1, TankC1],
+  };
+}
+
+function buildBlendIntoNonEmptyTankScenario(
+  qtyA: number,
+  varietalsA: Record<string, number>,
+  realA: number,
+  nominalA: number,
+  qtyB: number,
+  varietalsB: Record<string, number>,
+  realB: number,
+  nominalB: number,
+  qtyC: number,
+  varietalsC: Record<string, number>,
+  realC: number,
+  nominalC: number
+): CompositionScenario {
+  // Intent: Blend two input tanks into Tank C that already contains wine
+  // Scenario: Tank A + Tank B → Tank C (existing wine → blend)
+  
+  const tankA = createContainer("tankA_blend2", "Tank A Blend Source 2");
+  const tankB = createContainer("tankB_blend2", "Tank B Blend Source 2");
+  const tankC = createContainer("tankC_blend2", "Tank C Non-Empty Destination");
+
+  const TankA0 = createState("tankA0_blend2", tankA, qtyA, varietalsA, realA, nominalA);
+  const TankA1 = createState("tankA1_blend2", tankA, 0, {}, 0, 0);
+  const TankB0 = createState("tankB0_blend2", tankB, qtyB, varietalsB, realB, nominalB);
+  const TankB1 = createState("tankB1_blend2", tankB, 0, {}, 0, 0);
+  const TankC0 = createState("tankC0_blend2", tankC, qtyC, varietalsC, realC, nominalC);
+  
+  // Calculate expected final composition
+  const mergedVarietals = { ...varietalsC };
+  for (const [varietal, amount] of Object.entries(varietalsA)) {
+    mergedVarietals[varietal] = (mergedVarietals[varietal] || 0) + amount;
+  }
+  for (const [varietal, amount] of Object.entries(varietalsB)) {
+    mergedVarietals[varietal] = (mergedVarietals[varietal] || 0) + amount;
+  }
+  const TankC1 = createState("tankC1_blend2", tankC, qtyA + qtyB + qtyC, mergedVarietals, realA + realB + realC, nominalA + nominalB + nominalC);
+
+  return {
+    name: "blend_into_nonempty_tank_with_helper",
+    inputStates: [TankA0, TankB0, TankC0],
+    operation: (inputs) => {
+      // Generate flows from each source tank to destination
+      const [negativeFlowA, positiveFlowA] = generateFlowCompositions(
+        inputs[0].quantifiedComposition,
+        qtyA
+      );
+      
+      const [negativeFlowB, positiveFlowB] = generateFlowCompositions(
+        inputs[1].quantifiedComposition,
+        qtyB
+      );
+
+      // Use calculateBlendComposition to determine final composition
+      // Start with Tank C containing existing wine, add flows from A and B
+      const blendedComposition = calculateBlendComposition(
+        inputs[2], // TankC0 (already has wine)
+        [positiveFlowA, positiveFlowB] // Incoming flows from both tanks
+      );
+
+      // Verify the blend matches our expectation
+      if (blendedComposition.qty !== qtyA + qtyB + qtyC) {
+        throw new Error(`Blend qty mismatch: expected ${qtyA + qtyB + qtyC}, got ${blendedComposition.qty}`);
+      }
+      // Verify original varietals are preserved
+      for (const [varietal, expectedAmount] of Object.entries(varietalsC)) {
+        if (!blendedComposition.varietals?.[varietal] || blendedComposition.varietals[varietal] !== expectedAmount) {
+          throw new Error(`Expected ${varietal} to be preserved at ${expectedAmount} gal`);
+        }
+      }
+
+      return [
+        // Negative flow from TankA0 to TankA1 (empty it)
+        {
+          from: { id: inputs[0].id },
+          to: { id: TankA1.id },
+          properties: negativeFlowA
+        },
+        // Positive flow from TankA0 to TankC1 (contributing to blend)
+        {
+          from: { id: inputs[0].id },
+          to: { id: TankC1.id },
+          properties: positiveFlowA
+        },
+        // Negative flow from TankB0 to TankB1 (empty it)
+        {
+          from: { id: inputs[1].id },
+          to: { id: TankB1.id },
+          properties: negativeFlowB
+        },
+        // Positive flow from TankB0 to TankC1 (contributing to blend)
+        {
+          from: { id: inputs[1].id },
+          to: { id: TankC1.id },
+          properties: positiveFlowB
+        }
+      ];
+    },
+    expectedCompositions: [TankA1, TankB1, TankC1],
   };
 }

@@ -2,7 +2,6 @@
 // These utilities calculate flow compositions using exact integer math with deterministic rounding
 
 import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
-import { FlowToRelationship } from "../domain/relationships/Flow_to";
 
 /**
  * Calculates the composition of a flow based on the input state and flow quantity.
@@ -45,27 +44,45 @@ export function calculateFlowComposition(
 }
 
 /**
- * Calculates the resulting composition when blending multiple flows.
- * Used to determine output container compositions.
+ * Calculates the resulting composition when blending multiple flows into an incoming state.
+ * Used to determine output container compositions by merging the incoming state with all flows.
  */
-export function calculateBlendComposition(flows: FlowToRelationship[]): Partial<QuantifiedComposition> {
-  const summed: Partial<QuantifiedComposition> = { varietals: {} };
+export function calculateBlendComposition(
+  IncomingState: ContainerState,
+  IncomingFlows: QuantifiedComposition[]
+): QuantifiedComposition {
+  // Start with the incoming state's composition
+  const result: QuantifiedComposition = {
+    qty: IncomingState.quantifiedComposition.qty,
+    unit: IncomingState.quantifiedComposition.unit,
+    varietals: { ...IncomingState.quantifiedComposition.varietals },
+    realDollars: IncomingState.quantifiedComposition.realDollars || 0,
+    nominalDollars: IncomingState.quantifiedComposition.nominalDollars || 0
+  };
 
-  for (const flow of flows) {
-    if (flow.properties.varietals) {
-      for (const [varietal, amount] of Object.entries(flow.properties.varietals)) {
-        summed.varietals![varietal] = (summed.varietals![varietal] || 0) + amount;
+  // Merge in all incoming flows
+  for (const flow of IncomingFlows) {
+    // Add quantity
+    result.qty += flow.qty;
+
+    // Merge varietals
+    if (flow.varietals) {
+      result.varietals = result.varietals || {};
+      for (const [varietal, amount] of Object.entries(flow.varietals)) {
+        result.varietals[varietal] = (result.varietals[varietal] || 0) + amount;
       }
     }
-    if (flow.properties.realDollars !== undefined) {
-      summed.realDollars = (summed.realDollars || 0) + flow.properties.realDollars;
+
+    // Add dollars
+    if (flow.realDollars !== undefined) {
+      result.realDollars = (result.realDollars || 0) + flow.realDollars;
     }
-    if (flow.properties.nominalDollars !== undefined) {
-      summed.nominalDollars = (summed.nominalDollars || 0) + flow.properties.nominalDollars;
+    if (flow.nominalDollars !== undefined) {
+      result.nominalDollars = (result.nominalDollars || 0) + flow.nominalDollars;
     }
   }
 
-  return summed;
+  return result;
 }
 
 /**
@@ -93,82 +110,46 @@ export function compositionsEqual(a: QuantifiedComposition, b: QuantifiedComposi
 }
 
 /**
- * Generates flow specifications for a simple transfer operation.
- * From one container to another, with remaining amount staying in source.
+ * Generates quantified compositions for a transfer operation.
+ * Calculates how to split a source composition into transferred and remaining portions.
  * 
- * Intent: Create balanced flows where net deltas from each input sum to zero.
- * Uses the iterative rounding method with remainder assignment to last flow.
+ * Intent: Create balanced composition splits using deterministic rounding.
+ * Returns array of [remaining composition, transferred composition]
  */
-export function generateTransferFlows(
-  fromState: ContainerState,
-  toState: ContainerState,
+export function generateFlowCompositions(
+  fromComposition: QuantifiedComposition,
   transferQty: number
-): FlowToRelationship[] {
-  const remainingQty = fromState.quantifiedComposition.qty - transferQty;
-
-  // Calculate compositions with integer division
-  const transferredComp = calculateFlowComposition(fromState, transferQty);
-  const remainingComp = calculateFlowComposition(fromState, remainingQty);
-  
-  // Assign remainder to ensure exact conservation
-  const totalRemainder: QuantifiedComposition = {
-    qty: 0,
-    unit: fromState.quantifiedComposition.unit,
-    varietals: {},
-    realDollars: 0,
-    nominalDollars: 0
+): QuantifiedComposition[] {
+  // Create a temporary ContainerState for calculation
+  const tempState: ContainerState = {
+    id: 'temp',
+    tenantId: 'temp',
+    createdAt: new Date(),
+    timestamp: new Date(),
+    container: { id: 'temp' } as any,
+    quantifiedComposition: fromComposition
   };
 
-  // Calculate what was allocated vs what should have been
-  if (fromState.quantifiedComposition.varietals) {
-    for (const [varietal, total] of Object.entries(fromState.quantifiedComposition.varietals)) {
-      const allocated = (transferredComp.varietals?.[varietal] || 0) + (remainingComp.varietals?.[varietal] || 0);
-      const remainder = total - allocated;
-      if (remainder !== 0) {
-        remainingComp.varietals = remainingComp.varietals || {};
-        remainingComp.varietals[varietal] = (remainingComp.varietals[varietal] || 0) + remainder;
-      }
-    }
-  }
+  // Calculate compositions with integer division
+  const transferredFromComp = calculateFlowComposition(tempState, -transferQty);
+  const transferredToComp = calculateFlowComposition(tempState, transferQty);
 
-  if (fromState.quantifiedComposition.realDollars !== undefined) {
-    const allocated = (transferredComp.realDollars || 0) + (remainingComp.realDollars || 0);
-    const remainder = fromState.quantifiedComposition.realDollars - allocated;
-    remainingComp.realDollars = (remainingComp.realDollars || 0) + remainder;
-  }
 
-  if (fromState.quantifiedComposition.nominalDollars !== undefined) {
-    const allocated = (transferredComp.nominalDollars || 0) + (remainingComp.nominalDollars || 0);
-    const remainder = fromState.quantifiedComposition.nominalDollars - allocated;
-    remainingComp.nominalDollars = (remainingComp.nominalDollars || 0) + remainder;
-  }
-
+  // Return negative flow and positive flow as full QuantifiedComposition objects
   return [
-    // Negative flow: amount leaving source
     {
-      from: { id: fromState.id },
-      to: { id: fromState.id },
-      properties: {
-        qty: -transferQty,
-        unit: fromState.quantifiedComposition.unit,
-        varietals: transferredComp.varietals ? Object.fromEntries(
-          Object.entries(transferredComp.varietals).map(([k, v]) => [k, -v])
-        ) : {},
-        realDollars: -(transferredComp.realDollars || 0),
-        nominalDollars: -(transferredComp.nominalDollars || 0)
-      }
+      qty: -transferQty,
+      unit: fromComposition.unit,
+      varietals: transferredFromComp.varietals,
+      realDollars: transferredFromComp.realDollars,
+      nominalDollars: transferredFromComp.nominalDollars
     },
-    // Positive flow: amount arriving at destination
     {
-      from: { id: fromState.id },
-      to: { id: toState.id },
-      properties: {
-        qty: transferQty,
-        unit: fromState.quantifiedComposition.unit,
-        varietals: transferredComp.varietals,
-        realDollars: transferredComp.realDollars,
-        nominalDollars: transferredComp.nominalDollars
-      }
+      qty: transferQty,
+      unit: fromComposition.unit,
+      varietals: transferredToComp.varietals,
+      realDollars: transferredToComp.realDollars,
+      nominalDollars: transferredToComp.nominalDollars
     }
   ];
 }
