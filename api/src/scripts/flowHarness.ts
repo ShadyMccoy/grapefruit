@@ -1,20 +1,23 @@
 import { Container } from "../domain/nodes/Container";
-import { ContainerState, Composition } from "../domain/nodes/ContainerState";
+import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
 import { FlowToRelationship } from "../domain/relationships/Flow_to";
+import { generateTransferFlows } from "../core/CompositionHelpers";
 
 interface CompositionScenario {
   name: string;
   inputStates: ContainerState[];
-  flows: FlowToRelationship[];
+  flows?: FlowToRelationship[]; // Optional: can be generated
   expectedCompositions: ContainerState[];
+  operation?: (inputs: ContainerState[]) => FlowToRelationship[]; // Optional: generate flows from inputs
 }
 
 const HARNESS_TENANT = "harness_tenant";
 const ZERO_TIME = new Date("2000-01-01T00:00:00.000Z");
 
 const scenarios: CompositionScenario[] = [
-  //buildDirectTransferScenario(), 
-  buildDirectTransferScenario2()];
+  buildDirectTransferScenario2(),
+  buildGeneratedTransferScenario()
+];
 
 runHarness(scenarios).catch((error) => {
   console.error("Flow harness failed", error);
@@ -24,16 +27,21 @@ runHarness(scenarios).catch((error) => {
 async function runHarness(tests: CompositionScenario[]) {
   for (const scenario of tests) {
     console.log(`\nRunning scenario: ${scenario.name}`);
-    validateScenarioConnectivity(scenario);
-    validateConservation(scenario);
-    const computedStates = computeOutputStates(scenario);
-    assertStatesMatch(scenario.expectedCompositions, computedStates);
+    
+    // Generate flows if operation function provided
+    const flows = scenario.flows ?? scenario.operation?.(scenario.inputStates) ?? [];
+    const scenarioWithFlows = { ...scenario, flows };
+    
+    validateScenarioConnectivity(scenarioWithFlows);
+    validateConservation(scenarioWithFlows);
+    const computedStates = computeOutputStates(scenarioWithFlows);
+    assertStatesMatch(scenarioWithFlows.expectedCompositions, computedStates);
     console.log(`Scenario \"${scenario.name}\" passed.`);
   }
 }
 
 // Intent: Ensure flows reference known states before we trust the math.
-function validateScenarioConnectivity(scenario: CompositionScenario) {
+function validateScenarioConnectivity(scenario: CompositionScenario & { flows: FlowToRelationship[] }) {
   const knownStateIds = new Set<string>([
     ...scenario.inputStates.map((state) => state.id),
     ...scenario.expectedCompositions.map((state) => state.id),
@@ -54,7 +62,7 @@ function validateScenarioConnectivity(scenario: CompositionScenario) {
 }
 
 // Intent: Enforce quantity and composition conservation per input state (net flows sum to zero).
-function validateConservation(scenario: CompositionScenario) {
+function validateConservation(scenario: CompositionScenario & { flows: FlowToRelationship[] }) {
   const flowsByFrom = scenario.flows.reduce<Map<string, FlowToRelationship[]>>(
     (map, flow) => {
       const bucket = map.get(flow.from.id) ?? [];
@@ -68,7 +76,7 @@ function validateConservation(scenario: CompositionScenario) {
   for (const inputState of scenario.inputStates) {
     const flows = flowsByFrom.get(inputState.id) || [];
     let netQty = 0;
-    const netComposition: Composition = {
+    const netComposition: Partial<QuantifiedComposition> = {
       varietals: {},
       realDollars: 0,
       nominalDollars: 0,
@@ -76,7 +84,7 @@ function validateConservation(scenario: CompositionScenario) {
 
     for (const flow of flows) {
       netQty += flow.properties.qty;
-      mergeComposition(netComposition, flow.properties.composition);
+      mergeComposition(netComposition, flow.properties);
     }
 
     assertZeroNumber(`net qty for ${inputState.id}`, netQty);
@@ -86,8 +94,8 @@ function validateConservation(scenario: CompositionScenario) {
 
 function assertCompositionEqual(
   label: string,
-  actual: Composition,
-  expected: Composition
+  actual: Partial<QuantifiedComposition>,
+  expected: Partial<QuantifiedComposition>
 ) {
   const actualVarietals = actual.varietals ?? {};
   const expectedVarietals = expected.varietals ?? {};
@@ -116,7 +124,7 @@ function assertCompositionEqual(
   );
 }
 
-function assertCompositionZero(label: string, composition: Composition) {
+function assertCompositionZero(label: string, composition: Partial<QuantifiedComposition>) {
   const varietals = composition.varietals ?? {};
   for (const [key, amount] of Object.entries(varietals)) {
     assertZeroNumber(`${label} varietal ${key}`, amount);
@@ -138,7 +146,7 @@ function assertZeroNumber(label: string, value: number) {
 }
 
 // Intent: Aggregate flows into deterministic state projections for comparison.
-function computeOutputStates(scenario: CompositionScenario): ContainerState[] {
+function computeOutputStates(scenario: CompositionScenario & { flows: FlowToRelationship[] }): ContainerState[] {
   const inputsByContainer = new Map<string, ContainerState>();
   for (const input of scenario.inputStates) {
     inputsByContainer.set(input.container.id, input);
@@ -153,14 +161,16 @@ function computeOutputStates(scenario: CompositionScenario): ContainerState[] {
       shell = createOutputShell(targetId, scenario, flow);
       const input = inputsByContainer.get(shell.container.id);
       if (input) {
-        shell.qty = input.qty;
-        shell.composition = { ...input.composition };
+        shell.quantifiedComposition.qty = input.quantifiedComposition.qty;
+        shell.quantifiedComposition.varietals = { ...input.quantifiedComposition.varietals };
+        shell.quantifiedComposition.realDollars = input.quantifiedComposition.realDollars;
+        shell.quantifiedComposition.nominalDollars = input.quantifiedComposition.nominalDollars;
       }
       result.set(targetId, shell);
     }
-    shell.qty += flow.properties.qty;
-    shell.unit = flow.properties.unit;
-    mergeComposition(shell.composition, flow.properties.composition);
+    shell.quantifiedComposition.qty += flow.properties.qty;
+    shell.quantifiedComposition.unit = flow.properties.unit;
+    mergeComposition(shell.quantifiedComposition, flow.properties);
   }
 
   return Array.from(result.values());
@@ -188,14 +198,18 @@ function createOutputShell(
     tenantId: template?.tenantId ?? HARNESS_TENANT,
     createdAt: template?.createdAt ?? ZERO_TIME,
     container,
-    qty: 0,
-    unit: template?.unit ?? flow.properties.unit,
-    composition: {},
+    quantifiedComposition: {
+      qty: 0,
+      unit: template?.quantifiedComposition?.unit ?? flow.properties.unit,
+      varietals: {},
+      realDollars: 0,
+      nominalDollars: 0
+    },
     timestamp: template?.timestamp ?? ZERO_TIME,
   };
 }
 
-function mergeComposition(target: Composition, delta?: Composition) {
+function mergeComposition(target: Partial<QuantifiedComposition>, delta?: Partial<QuantifiedComposition>) {
   if (!delta) return;
 
   if (delta.varietals) {
@@ -225,20 +239,20 @@ function assertStatesMatch(expected: ContainerState[], actual: ContainerState[])
 
     assertApproxEqual(
       `qty mismatch for ${expectedState.id}`,
-      actualState.qty,
-      expectedState.qty
+      actualState.quantifiedComposition.qty,
+      expectedState.quantifiedComposition.qty
     );
 
-    if (actualState.unit !== expectedState.unit) {
+    if (actualState.quantifiedComposition.unit !== expectedState.quantifiedComposition.unit) {
       throw new Error(
-        `unit mismatch for ${expectedState.id}: ${actualState.unit} vs ${expectedState.unit}`
+        `unit mismatch for ${expectedState.id}: ${actualState.quantifiedComposition.unit} vs ${expectedState.quantifiedComposition.unit}`
       );
     }
 
     assertCompositionEqual(
       `composition mismatch for ${expectedState.id}`,
-      actualState.composition,
-      expectedState.composition
+      actualState.quantifiedComposition,
+      expectedState.quantifiedComposition
     );
 
     actualById.delete(expectedState.id);
@@ -280,9 +294,9 @@ function buildDirectTransferScenario2(): CompositionScenario {
     tenantId: HARNESS_TENANT,
     createdAt: ZERO_TIME,
     container: tankA,
-    qty: 1000,
-    unit: "gal",
-    composition: {
+    quantifiedComposition: {
+      qty: 1000,
+      unit: "gal",
       varietals: { chardonnay: 1000 },
       realDollars: 5000,
       nominalDollars: 4800,
@@ -295,9 +309,9 @@ function buildDirectTransferScenario2(): CompositionScenario {
     tenantId: HARNESS_TENANT,
     createdAt: ZERO_TIME,
     container: tankA,
-    qty: 900,
-    unit: "gal",
-    composition: {
+    quantifiedComposition: {
+      qty: 900,
+      unit: "gal",
       varietals: { chardonnay: 900 },
       realDollars: 4500,
       nominalDollars: 4320,
@@ -310,9 +324,9 @@ function buildDirectTransferScenario2(): CompositionScenario {
     tenantId: HARNESS_TENANT,
     createdAt: ZERO_TIME,
     container: tankB,
-    qty: 0,
-    unit: "gal",
-    composition: {
+    quantifiedComposition: {
+      qty: 0,
+      unit: "gal",
       varietals: { },
       realDollars: 0,
       nominalDollars: 0,
@@ -325,9 +339,9 @@ function buildDirectTransferScenario2(): CompositionScenario {
     tenantId: HARNESS_TENANT,
     createdAt: ZERO_TIME,
     container: tankB,
-    qty: 100,
-    unit: "gal",
-    composition: {
+    quantifiedComposition: {
+      qty: 100,
+      unit: "gal",
       varietals: { chardonnay: 100 },
       realDollars: 500,
       nominalDollars: 480,
@@ -342,11 +356,9 @@ function buildDirectTransferScenario2(): CompositionScenario {
       properties: {
         qty: -100,
         unit: "gal",
-        composition: {
-          varietals: { chardonnay: -100 },
-          realDollars: -500,
-          nominalDollars: -480,
-        },
+        varietals: { chardonnay: -100 },
+        realDollars: -500,
+        nominalDollars: -480,
       },
     },{
       from: { id: TankA0.id },
@@ -354,11 +366,9 @@ function buildDirectTransferScenario2(): CompositionScenario {
       properties: {
         qty: 100,
         unit: "gal",
-        composition: {
-          varietals: { chardonnay: 100 },
-          realDollars: 500,
-          nominalDollars: 480,
-        },
+        varietals: { chardonnay: 100 },
+        realDollars: 500,
+        nominalDollars: 480,
       },
     },
   ];
@@ -369,6 +379,89 @@ function buildDirectTransferScenario2(): CompositionScenario {
     flows,
     expectedCompositions: [TankA1, TankB1],
   };
-
 }
 
+function buildGeneratedTransferScenario(): CompositionScenario {
+  const tankA: Container = {
+    id: "tankA_gen",
+    tenantId: HARNESS_TENANT,
+    createdAt: ZERO_TIME,
+    name: "Tank A Generated",
+    type: "tank",
+  };
+
+  const tankB: Container = {
+    id: "tankB_gen",
+    tenantId: HARNESS_TENANT,
+    createdAt: ZERO_TIME,
+    name: "Tank B Generated",
+    type: "tank",
+  };
+
+  const TankA0: ContainerState = {
+    id: "tankA0_gen",
+    tenantId: HARNESS_TENANT,
+    createdAt: ZERO_TIME,
+    container: tankA,
+    quantifiedComposition: {
+      qty: 1000,
+      unit: "gal",
+      varietals: { chardonnay: 1000 },
+      realDollars: 5000,
+      nominalDollars: 4800,
+    },
+    timestamp: ZERO_TIME,
+  };
+
+  const TankA1: ContainerState = {
+    id: "tankA1_gen",
+    tenantId: HARNESS_TENANT,
+    createdAt: ZERO_TIME,
+    container: tankA,
+    quantifiedComposition: {
+      qty: 900,
+      unit: "gal",
+      varietals: { chardonnay: 900 },
+      realDollars: 4500,
+      nominalDollars: 4320,
+    },
+    timestamp: ZERO_TIME,
+  };
+
+  const TankB0: ContainerState = {
+    id: "tankB0_gen",
+    tenantId: HARNESS_TENANT,
+    createdAt: ZERO_TIME,
+    container: tankB,
+    quantifiedComposition: {
+      qty: 0,
+      unit: "gal",
+      varietals: {},
+      realDollars: 0,
+      nominalDollars: 0,
+    },
+    timestamp: ZERO_TIME,
+  };
+
+  const TankB1: ContainerState = {
+    id: "tankB1_gen",
+    tenantId: HARNESS_TENANT,
+    createdAt: ZERO_TIME,
+    container: tankB,
+    quantifiedComposition: {
+      qty: 100,
+      unit: "gal",
+      varietals: { chardonnay: 100 },
+      realDollars: 500,
+      nominalDollars: 480,
+    },
+    timestamp: ZERO_TIME,
+  };
+
+  return {
+    name: "generated_transfer_with_helper",
+    inputStates: [TankA0, TankB0],
+    operation: (inputs) => generateTransferFlows(inputs[0], inputs[1], 100),
+    expectedCompositions: [TankA1, TankB1],
+  };
+}

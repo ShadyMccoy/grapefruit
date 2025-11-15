@@ -32,7 +32,9 @@ async function main() {
       tagNumber: "WT-2024-001",
       weightLbs: 2500,
       vintage: 2024,
-      composition: {
+      quantifiedComposition: {
+        qty: 2500,
+        unit: "lbs",
         varietals: { chardonnay: 2500 },
         realDollars: 3750,
         nominalDollars: 3750
@@ -46,7 +48,9 @@ async function main() {
       tagNumber: "WT-2024-002",
       weightLbs: 3200,
       vintage: 2024,
-      composition: {
+      quantifiedComposition: {
+        qty: 3200,
+        unit: "lbs",
         varietals: { pinot: 3200 },
         realDollars: 4800,
         nominalDollars: 4800
@@ -106,9 +110,9 @@ async function main() {
     const state1: ContainerState = {
       id: "state_test_tank_1",
       container: tank1,
-      qty: 400,
-      unit: "gal",
-      composition: {
+      quantifiedComposition: {
+        qty: 400,
+        unit: "gal",
         varietals: { chardonnay: 400 },
         realDollars: 2000,
         nominalDollars: 2000
@@ -121,9 +125,9 @@ async function main() {
     const state2: ContainerState = {
       id: "state_test_barrel_1",
       container: barrel1,
-      qty: 50,
-      unit: "gal",
-      composition: {
+      quantifiedComposition: {
+        qty: 50,
+        unit: "gal",
         varietals: { pinot: 50 },
         realDollars: 500,
         nominalDollars: 500
@@ -134,10 +138,10 @@ async function main() {
     };
 
     await stateRepo.create(state1);
-    console.log(`  ✅ Created ContainerState: ${state1.id} for ${tank1.name} (${state1.qty} ${state1.unit})`);
+    console.log(`  ✅ Created ContainerState: ${state1.id} for ${tank1.name} (${state1.quantifiedComposition.qty} ${state1.quantifiedComposition.unit})`);
     
     await stateRepo.create(state2);
-    console.log(`  ✅ Created ContainerState: ${state2.id} for ${barrel1.name} (${state2.qty} ${state2.unit})`);
+    console.log(`  ✅ Created ContainerState: ${state2.id} for ${barrel1.name} (${state2.quantifiedComposition.qty} ${state2.quantifiedComposition.unit})`);
 
     // Verify ContainerStates were created
     const statesForTank = await stateRepo.findCurrentByContainer(tank1.id);

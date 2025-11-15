@@ -16,6 +16,8 @@ export class WeighTagRepo {
         tagNumber: $tagNumber,
         weightLbs: $weightLbs,
         vintage: $vintage,
+        qty: $qty,
+        unit: $unit,
         composition: $composition,
         tenantId: $tenantId,
         createdAt: datetime($createdAt)
@@ -26,7 +28,13 @@ export class WeighTagRepo {
         tagNumber: weighTag.tagNumber,
         weightLbs: weighTag.weightLbs,
         vintage: weighTag.vintage,
-        composition: JSON.stringify(weighTag.composition),
+        qty: weighTag.quantifiedComposition.qty,
+        unit: weighTag.quantifiedComposition.unit,
+        composition: JSON.stringify({
+          varietals: weighTag.quantifiedComposition.varietals,
+          realDollars: weighTag.quantifiedComposition.realDollars,
+          nominalDollars: weighTag.quantifiedComposition.nominalDollars
+        }),
         tenantId: weighTag.tenantId,
         createdAt: weighTag.createdAt.toISOString(),
       }
@@ -56,10 +64,21 @@ export class WeighTagRepo {
     if (result.records.length === 0) return null;
     
     const w = result.records[0].get("w").properties;
+    const comp = w.composition ? JSON.parse(w.composition) : {};
     return {
-      ...w,
-      composition: JSON.parse(w.composition),
-      createdAt: new Date(w.createdAt)
+      id: w.id,
+      tagNumber: w.tagNumber,
+      weightLbs: w.weightLbs,
+      vintage: w.vintage,
+      tenantId: w.tenantId,
+      createdAt: new Date(w.createdAt),
+      quantifiedComposition: {
+        qty: w.qty,
+        unit: w.unit,
+        varietals: comp.varietals,
+        realDollars: comp.realDollars,
+        nominalDollars: comp.nominalDollars
+      }
     } as WeighTag;
   }
 
@@ -67,10 +86,21 @@ export class WeighTagRepo {
     const result = await this.session.run(`MATCH (w:WeighTag) RETURN w`);
     return result.records.map(r => {
       const w = r.get("w").properties;
+      const comp = w.composition ? JSON.parse(w.composition) : {};
       return {
-        ...w,
-        composition: JSON.parse(w.composition),
-        createdAt: new Date(w.createdAt)
+        id: w.id,
+        tagNumber: w.tagNumber,
+        weightLbs: w.weightLbs,
+        vintage: w.vintage,
+        tenantId: w.tenantId,
+        createdAt: new Date(w.createdAt),
+        quantifiedComposition: {
+          qty: w.qty,
+          unit: w.unit,
+          varietals: comp.varietals,
+          realDollars: comp.realDollars,
+          nominalDollars: comp.nominalDollars
+        }
       } as WeighTag;
     });
   }

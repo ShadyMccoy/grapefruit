@@ -22,9 +22,13 @@ export class ContainerStateRepo {
       `,
       {
         id: state.id,
-        qty: state.qty,
-        unit: state.unit,
-        composition: JSON.stringify(state.composition),
+        qty: state.quantifiedComposition.qty,
+        unit: state.quantifiedComposition.unit,
+        composition: JSON.stringify({
+          varietals: state.quantifiedComposition.varietals,
+          realDollars: state.quantifiedComposition.realDollars,
+          nominalDollars: state.quantifiedComposition.nominalDollars
+        }),
         timestamp: state.timestamp.toISOString(),
         tenantId: state.tenantId,
         createdAt: state.createdAt.toISOString(),
@@ -46,11 +50,20 @@ export class ContainerStateRepo {
     return result.records.map(r => {
       const s = r.get("s").properties;
       const c = r.get("c").properties;
+      const comp = s.composition ? JSON.parse(s.composition) : {};
       return {
-        ...s,
-        timestamp: new Date(s.timestamp),
+        id: s.id,
+        tenantId: s.tenantId,
         createdAt: new Date(s.createdAt),
-        container: { ...c, createdAt: new Date(c.createdAt) } as Container
+        timestamp: new Date(s.timestamp),
+        container: { ...c, createdAt: new Date(c.createdAt) } as Container,
+        quantifiedComposition: {
+          qty: s.qty,
+          unit: s.unit,
+          varietals: comp.varietals,
+          realDollars: comp.realDollars,
+          nominalDollars: comp.nominalDollars
+        }
       } as ContainerState;
     });
   }

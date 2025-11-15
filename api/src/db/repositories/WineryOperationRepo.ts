@@ -1,7 +1,6 @@
 import { getDriver } from "../client";
 import { WineryOperation } from "../../domain/nodes/WineryOperation";
 import { ContainerState } from "../../domain/nodes/ContainerState";
-import { FlowToProps } from "../../domain/relationships/Flow_to";
 
 export class WineryOperationRepo {
   static async createOperation(op: WineryOperation): Promise<string> {

@@ -1,7 +1,6 @@
 import { WineryOperation, FlowSpec } from "../domain/nodes/WineryOperation";
-import { ContainerState, Composition } from "../domain/nodes/ContainerState";
+import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
 import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
-import { ContainerStateRepo } from "../db/repositories/ContainerStateRepo";
 import { ContainerRepo } from "../db/repositories/ContainerRepo";
 import { getDriver } from "../db/client";
 
@@ -29,35 +28,35 @@ export class WineryOperationService {
     if (!toState) throw new Error(`No current state found for container ${toContainerId}`);
 
     // Compute dollars per unit from the source (fromState)
-    const fromRealPerUnit = (fromState.composition.realDollars || 0) / (fromState.qty || 1);
-    const fromNominalPerUnit = (fromState.composition.nominalDollars || 0) / (fromState.qty || 1);
+    const fromRealPerUnit = (fromState.quantifiedComposition.realDollars || 0) / (fromState.quantifiedComposition.qty || 1);
+    const fromNominalPerUnit = (fromState.quantifiedComposition.nominalDollars || 0) / (fromState.quantifiedComposition.qty || 1);
     const transferReal = Math.round(fromRealPerUnit * qty);
     const transferNominal = Math.round(fromNominalPerUnit * qty);
 
     // Compute varietal split for transfer based on source composition
     const transferVarietals: Record<string, number> = {};
-    if (fromState.composition.varietals) {
-      const totalVol = fromState.qty || 1;
-      for (const [varietal, amount] of Object.entries(fromState.composition.varietals)) {
+    if (fromState.quantifiedComposition.varietals) {
+      const totalVol = fromState.quantifiedComposition.qty || 1;
+      for (const [varietal, amount] of Object.entries(fromState.quantifiedComposition.varietals)) {
         const portion = (amount / totalVol) * qty;
         transferVarietals[varietal] = Math.round(portion);
       }
     }
 
     // Build outputs
-    const outFromQty = fromState.qty - qty;
-    const outFromComp = {
-      varietals: mergeVarietals(fromState.composition.varietals, scaleVarietals(transferVarietals, -1)),
-      realDollars: (fromState.composition.realDollars || 0) - transferReal,
-      nominalDollars: (fromState.composition.nominalDollars || 0) - transferNominal
-    } as Composition;
+    const outFromQty = fromState.quantifiedComposition.qty - qty;
+    const outFromComp: Partial<QuantifiedComposition> = {
+      varietals: mergeVarietals(fromState.quantifiedComposition.varietals, scaleVarietals(transferVarietals, -1)),
+      realDollars: (fromState.quantifiedComposition.realDollars || 0) - transferReal,
+      nominalDollars: (fromState.quantifiedComposition.nominalDollars || 0) - transferNominal
+    };
 
-    const outToQty = toState.qty + qty;
-    const outToComp = {
-      varietals: mergeVarietals(toState.composition.varietals, transferVarietals),
-      realDollars: (toState.composition.realDollars || 0) + transferReal,
-      nominalDollars: (toState.composition.nominalDollars || 0) + transferNominal
-    } as Composition;
+    const outToQty = toState.quantifiedComposition.qty + qty;
+    const outToComp: Partial<QuantifiedComposition> = {
+      varietals: mergeVarietals(toState.quantifiedComposition.varietals, transferVarietals),
+      realDollars: (toState.quantifiedComposition.realDollars || 0) + transferReal,
+      nominalDollars: (toState.quantifiedComposition.nominalDollars || 0) + transferNominal
+    };
 
     // Assemble WineryOperation
     const op: WineryOperation = {
@@ -72,21 +71,25 @@ export class WineryOperationService {
           containerId: fromState.container.id,
           stateId: `${id}__${fromState.container.id}`,
           qty: outFromQty,
-          unit: fromState.unit,
-          composition: outFromComp
+          unit: fromState.quantifiedComposition.unit,
+          varietals: outFromComp.varietals,
+          realDollars: outFromComp.realDollars,
+          nominalDollars: outFromComp.nominalDollars
         },
         {
           containerId: toState.container.id,
           stateId: `${id}__${toState.container.id}`,
           qty: outToQty,
-          unit: toState.unit,
-          composition: outToComp
+          unit: toState.quantifiedComposition.unit,
+          varietals: outToComp.varietals,
+          realDollars: outToComp.realDollars,
+          nominalDollars: outToComp.nominalDollars
         }
       ],
       flows: [
-        { from: 0, to: 1, qty: qty, unit: fromState.unit, composition: { varietals: transferVarietals, realDollars: transferReal, nominalDollars: transferNominal } },
-        { from: 0, to: 0, qty: -qty, unit: fromState.unit, composition: { varietals: scaleVarietals(transferVarietals, -1), realDollars: -transferReal, nominalDollars: -transferNominal } },
-        { from: 1, to: 1, qty: 0, unit: toState.unit, composition: {} }
+        { from: 0, to: 1, qty: qty, unit: fromState.quantifiedComposition.unit, composition: { varietals: transferVarietals, realDollars: transferReal, nominalDollars: transferNominal } },
+        { from: 0, to: 0, qty: -qty, unit: fromState.quantifiedComposition.unit, composition: { varietals: scaleVarietals(transferVarietals, -1), realDollars: -transferReal, nominalDollars: -transferNominal } },
+        { from: 1, to: 1, qty: 0, unit: toState.quantifiedComposition.unit, composition: {} }
       ]
     };
 
@@ -180,12 +183,18 @@ export class WineryOperationService {
       if (!node) return null;
       const s = node.properties as any;
       const qtyNum = s.qty && typeof s.qty.toNumber === 'function' ? s.qty.toNumber() : (typeof s.qty === 'bigint' ? Number(s.qty) : (s.qty as number));
+      const comp = s.composition ? JSON.parse(s.composition) : {};
       return {
         ...s,
-        qty: qtyNum,
         timestamp: new Date(s.timestamp),
         createdAt: new Date(s.createdAt),
-        composition: s.composition ? JSON.parse(s.composition) : {},
+        quantifiedComposition: {
+          qty: qtyNum,
+          unit: s.unit || 'gal',
+          varietals: comp.varietals,
+          realDollars: comp.realDollars,
+          nominalDollars: comp.nominalDollars
+        },
         container: { id: containerId } as any
       } as ContainerState;
     } finally {

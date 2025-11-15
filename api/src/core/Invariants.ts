@@ -2,7 +2,7 @@
 // Intent: Enforce mathematical invariants for winery operations
 // Reasoning: Ensures conservation of quantities, compositions, and monetary values across all transformations
 
-import { ContainerState, Composition } from "../domain/nodes/ContainerState";
+import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
 import { WineryOperation, FlowSpec } from "../domain/nodes/WineryOperation";
 import { ValidationResult } from "./ValidationResult";
 import { getDriver } from "../db/client";
@@ -138,7 +138,7 @@ export class Invariants {
       // Sum all composition deltas
       const netComposition = flowsFromInput.reduce(
         (sum, flow) => this.addCompositions(sum, flow.composition),
-        {} as Composition
+        {} as Partial<QuantifiedComposition>
       );
 
       // Net composition must be zero
@@ -242,7 +242,7 @@ export class Invariants {
   }
 
   // Helper: Check if composition is effectively zero
-  private static isZeroComposition(composition: Composition): boolean {
+  private static isZeroComposition(composition: Partial<QuantifiedComposition>): boolean {
     const tolerance = 0.001;
 
     if (composition.varietals) {
@@ -258,8 +258,8 @@ export class Invariants {
   }
 
   // Helper: Add two compositions together
-  private static addCompositions(a: Composition, b: Composition): Composition {
-    const result: Composition = {};
+  private static addCompositions(a: Partial<QuantifiedComposition>, b: Partial<QuantifiedComposition>): Partial<QuantifiedComposition> {
+    const result: Partial<QuantifiedComposition> = {};
 
     // Add varietals
     if (a.varietals || b.varietals) {

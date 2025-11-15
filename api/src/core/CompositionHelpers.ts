@@ -1,77 +1,67 @@
-// Composition calculation helpers for front-end
-// These utilities help calculate flow compositions and validate operations
+// Composition calculation helpers for domain operations
+// These utilities calculate flow compositions using exact integer math with deterministic rounding
 
-export interface Composition {
-  varietals?: Record<string, number>;
-  realDollars?: number;
-  nominalDollars?: number;
-}
-
-export interface FlowSpec {
-  from: number;
-  to: number;
-  qty: number;
-  composition: Composition;
-}
-
-export interface ContainerState {
-  qty: number;
-  composition: Composition;
-}
+import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
+import { FlowToRelationship } from "../domain/relationships/Flow_to";
 
 /**
  * Calculates the composition of a flow based on the input state and flow quantity.
- * Assumes homogeneous mixing within the container.
+ * Uses integer division (floor) with remainder assignment to ensure conservation.
+ * 
+ * Intent: Proportionally distribute composition attributes across flows using deterministic rounding.
+ * For each attribute: c = floor(C * q / Q), with remainder assigned to last flow.
  */
 export function calculateFlowComposition(
   inputState: ContainerState,
   flowQty: number
-): Composition {
+): Partial<QuantifiedComposition> {
   if (flowQty === 0) {
     return { varietals: {}, realDollars: 0, nominalDollars: 0 };
   }
 
-  const scale = flowQty / inputState.qty;
+  const totalQty = inputState.quantifiedComposition.qty;
+  const result: Partial<QuantifiedComposition> = { varietals: {} };
 
-  return {
-    varietals: inputState.composition.varietals ?
-      Object.fromEntries(
-        Object.entries(inputState.composition.varietals).map(
-          ([varietal, amount]) => [varietal, amount * scale]
-        )
-      ) : undefined,
-    realDollars: inputState.composition.realDollars ?
-      inputState.composition.realDollars * scale : undefined,
-    nominalDollars: inputState.composition.nominalDollars ?
-      inputState.composition.nominalDollars * scale : undefined
-  };
+  // Calculate varietal amounts using integer division
+  if (inputState.quantifiedComposition.varietals) {
+    for (const [varietal, totalAmount] of Object.entries(inputState.quantifiedComposition.varietals)) {
+      const flowAmount = Math.floor((totalAmount * Math.abs(flowQty)) / totalQty);
+      result.varietals![varietal] = flowQty < 0 ? -flowAmount : flowAmount;
+    }
+  }
+
+  // Calculate dollar amounts using integer division
+  if (inputState.quantifiedComposition.realDollars !== undefined) {
+    const flowDollars = Math.floor((inputState.quantifiedComposition.realDollars * Math.abs(flowQty)) / totalQty);
+    result.realDollars = flowQty < 0 ? -flowDollars : flowDollars;
+  }
+
+  if (inputState.quantifiedComposition.nominalDollars !== undefined) {
+    const flowDollars = Math.floor((inputState.quantifiedComposition.nominalDollars * Math.abs(flowQty)) / totalQty);
+    result.nominalDollars = flowQty < 0 ? -flowDollars : flowDollars;
+  }
+
+  return result;
 }
 
 /**
  * Calculates the resulting composition when blending multiple flows.
  * Used to determine output container compositions.
  */
-export function calculateBlendComposition(flows: FlowSpec[]): Composition {
-  const totalQty = flows.reduce((sum, flow) => sum + flow.qty, 0);
-
-  if (totalQty === 0) {
-    return { varietals: {}, realDollars: 0, nominalDollars: 0 };
-  }
-
-  // Sum all compositions
-  const summed: Composition = { varietals: {} };
+export function calculateBlendComposition(flows: FlowToRelationship[]): Partial<QuantifiedComposition> {
+  const summed: Partial<QuantifiedComposition> = { varietals: {} };
 
   for (const flow of flows) {
-    if (flow.composition.varietals) {
-      for (const [varietal, amount] of Object.entries(flow.composition.varietals)) {
+    if (flow.properties.varietals) {
+      for (const [varietal, amount] of Object.entries(flow.properties.varietals)) {
         summed.varietals![varietal] = (summed.varietals![varietal] || 0) + amount;
       }
     }
-    if (flow.composition.realDollars !== undefined) {
-      summed.realDollars = (summed.realDollars || 0) + flow.composition.realDollars;
+    if (flow.properties.realDollars !== undefined) {
+      summed.realDollars = (summed.realDollars || 0) + flow.properties.realDollars;
     }
-    if (flow.composition.nominalDollars !== undefined) {
-      summed.nominalDollars = (summed.nominalDollars || 0) + flow.composition.nominalDollars;
+    if (flow.properties.nominalDollars !== undefined) {
+      summed.nominalDollars = (summed.nominalDollars || 0) + flow.properties.nominalDollars;
     }
   }
 
@@ -79,54 +69,10 @@ export function calculateBlendComposition(flows: FlowSpec[]): Composition {
 }
 
 /**
- * Validates that flow compositions are consistent with input states.
- * Checks quantity and composition conservation.
+ * Checks if two compositions are exactly equal (no tolerance).
+ * Uses strict equality for integer h-units.
  */
-export function validateFlows(
-  inputStates: ContainerState[],
-  flows: FlowSpec[]
-): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-
-  // Group flows by input
-  const flowsByInput = new Map<number, FlowSpec[]>();
-  for (const flow of flows) {
-    if (!flowsByInput.has(flow.from)) {
-      flowsByInput.set(flow.from, []);
-    }
-    flowsByInput.get(flow.from)!.push(flow);
-  }
-
-  // Validate each input
-  for (let inputIndex = 0; inputIndex < inputStates.length; inputIndex++) {
-    const inputState = inputStates[inputIndex];
-    const inputFlows = flowsByInput.get(inputIndex) || [];
-
-    // If no flows from this input, skip validation (means no contribution)
-    if (inputFlows.length === 0) {
-      continue;
-    }
-
-    // Check quantity conservation
-    const totalFlowQty = inputFlows.reduce((sum, flow) => sum + flow.qty, 0);
-    if (Math.abs(totalFlowQty - inputState.qty) > 0.001) {
-      errors.push(`Input ${inputIndex}: flow quantity sum ${totalFlowQty} ≠ input quantity ${inputState.qty}`);
-    }
-
-    // Check composition conservation
-    const summedComposition = calculateBlendComposition(inputFlows);
-    if (!compositionsEqual(summedComposition, inputState.composition)) {
-      errors.push(`Input ${inputIndex}: flow compositions don't sum to input composition`);
-    }
-  }
-
-  return { valid: errors.length === 0, errors };
-}
-
-/**
- * Checks if two compositions are equal within tolerance.
- */
-export function compositionsEqual(a: Composition, b: Composition): boolean {
+export function compositionsEqual(a: QuantifiedComposition, b: QuantifiedComposition): boolean {
   // Compare varietals
   const aVarietals = Object.keys(a.varietals || {});
   const bVarietals = Object.keys(b.varietals || {});
@@ -136,12 +82,12 @@ export function compositionsEqual(a: Composition, b: Composition): boolean {
   for (const varietal of aVarietals) {
     const aAmount = a.varietals![varietal] || 0;
     const bAmount = b.varietals![varietal] || 0;
-    if (Math.abs(aAmount - bAmount) > 0.001) return false;
+    if (aAmount !== bAmount) return false;
   }
 
   // Compare dollars
-  if (Math.abs((a.realDollars || 0) - (b.realDollars || 0)) > 0.001) return false;
-  if (Math.abs((a.nominalDollars || 0) - (b.nominalDollars || 0)) > 0.001) return false;
+  if ((a.realDollars || 0) !== (b.realDollars || 0)) return false;
+  if ((a.nominalDollars || 0) !== (b.nominalDollars || 0)) return false;
 
   return true;
 }
@@ -149,35 +95,80 @@ export function compositionsEqual(a: Composition, b: Composition): boolean {
 /**
  * Generates flow specifications for a simple transfer operation.
  * From one container to another, with remaining amount staying in source.
+ * 
+ * Intent: Create balanced flows where net deltas from each input sum to zero.
+ * Uses the iterative rounding method with remainder assignment to last flow.
  */
 export function generateTransferFlows(
   fromState: ContainerState,
   toState: ContainerState,
   transferQty: number
-): FlowSpec[] {
-  const remainingQty = fromState.qty - transferQty;
+): FlowToRelationship[] {
+  const remainingQty = fromState.quantifiedComposition.qty - transferQty;
+
+  // Calculate compositions with integer division
+  const transferredComp = calculateFlowComposition(fromState, transferQty);
+  const remainingComp = calculateFlowComposition(fromState, remainingQty);
+  
+  // Assign remainder to ensure exact conservation
+  const totalRemainder: QuantifiedComposition = {
+    qty: 0,
+    unit: fromState.quantifiedComposition.unit,
+    varietals: {},
+    realDollars: 0,
+    nominalDollars: 0
+  };
+
+  // Calculate what was allocated vs what should have been
+  if (fromState.quantifiedComposition.varietals) {
+    for (const [varietal, total] of Object.entries(fromState.quantifiedComposition.varietals)) {
+      const allocated = (transferredComp.varietals?.[varietal] || 0) + (remainingComp.varietals?.[varietal] || 0);
+      const remainder = total - allocated;
+      if (remainder !== 0) {
+        remainingComp.varietals = remainingComp.varietals || {};
+        remainingComp.varietals[varietal] = (remainingComp.varietals[varietal] || 0) + remainder;
+      }
+    }
+  }
+
+  if (fromState.quantifiedComposition.realDollars !== undefined) {
+    const allocated = (transferredComp.realDollars || 0) + (remainingComp.realDollars || 0);
+    const remainder = fromState.quantifiedComposition.realDollars - allocated;
+    remainingComp.realDollars = (remainingComp.realDollars || 0) + remainder;
+  }
+
+  if (fromState.quantifiedComposition.nominalDollars !== undefined) {
+    const allocated = (transferredComp.nominalDollars || 0) + (remainingComp.nominalDollars || 0);
+    const remainder = fromState.quantifiedComposition.nominalDollars - allocated;
+    remainingComp.nominalDollars = (remainingComp.nominalDollars || 0) + remainder;
+  }
 
   return [
-    // Remaining in source container
+    // Negative flow: amount leaving source
     {
-      from: 0,
-      to: 0,
-      qty: remainingQty,
-      composition: calculateFlowComposition(fromState, remainingQty)
+      from: { id: fromState.id },
+      to: { id: fromState.id },
+      properties: {
+        qty: -transferQty,
+        unit: fromState.quantifiedComposition.unit,
+        varietals: transferredComp.varietals ? Object.fromEntries(
+          Object.entries(transferredComp.varietals).map(([k, v]) => [k, -v])
+        ) : {},
+        realDollars: -(transferredComp.realDollars || 0),
+        nominalDollars: -(transferredComp.nominalDollars || 0)
+      }
     },
-    // Transferred to destination container
+    // Positive flow: amount arriving at destination
     {
-      from: 0,
-      to: 1,
-      qty: transferQty,
-      composition: calculateFlowComposition(fromState, transferQty)
-    },
-    // Existing in destination container
-    {
-      from: 1,
-      to: 1,
-      qty: toState.qty,
-      composition: calculateFlowComposition(toState, toState.qty)
+      from: { id: fromState.id },
+      to: { id: toState.id },
+      properties: {
+        qty: transferQty,
+        unit: fromState.quantifiedComposition.unit,
+        varietals: transferredComp.varietals,
+        realDollars: transferredComp.realDollars,
+        nominalDollars: transferredComp.nominalDollars
+      }
     }
   ];
 }
