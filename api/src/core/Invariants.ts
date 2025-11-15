@@ -3,7 +3,8 @@
 // Reasoning: Ensures conservation of quantities, compositions, and monetary values across all transformations
 
 import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
-import { WineryOperation, FlowSpec } from "../domain/nodes/WineryOperation";
+import { WineryOperation } from "../domain/nodes/WineryOperation";
+import { FlowToRelationship } from "../domain/relationships/Flow_to";
 import { ValidationResult } from "./ValidationResult";
 import { getDriver } from "../db/client";
 
@@ -83,29 +84,29 @@ export class Invariants {
   // Intent: Validate quantity conservation using delta-based flow model
   // Reasoning: Net flows from each input must sum to zero (what goes out must come back in)
   static assertQuantityConservation(operation: WineryOperation): ValidationResult {
-    if (!operation.flows || !operation.inputStateIds) {
+    if (!operation.flows || !operation.inputStates) {
       return { ok: true }; // No flows to validate
     }
 
-    // Group flows by input state index
-    const flowsByInput = new Map<number, FlowSpec[]>();
+    // Group flows by input state ID
+    const flowsByInput = new Map<string, FlowToRelationship[]>();
     for (const flow of operation.flows) {
-      if (!flowsByInput.has(flow.from)) {
-        flowsByInput.set(flow.from, []);
+      if (!flowsByInput.has(flow.from.id)) {
+        flowsByInput.set(flow.from.id, []);
       }
-      flowsByInput.get(flow.from)!.push(flow);
+      flowsByInput.get(flow.from.id)!.push(flow);
     }
 
     // Validate each input's net flow is zero
-    for (let inputIndex = 0; inputIndex < operation.inputStateIds.length; inputIndex++) {
-      const flowsFromInput = flowsByInput.get(inputIndex) || [];
-      const netQty = flowsFromInput.reduce((sum, flow) => sum + flow.qty, 0);
+    for (const inputState of operation.inputStates) {
+      const flowsFromInput = flowsByInput.get(inputState.id) || [];
+      const netQty = flowsFromInput.reduce((sum, flow) => sum + flow.properties.qty, 0);
 
       if (Math.abs(netQty) > 0.001) {
         return {
           ok: false,
           code: "QUANTITY_NOT_CONSERVED",
-          message: `Net flow from input ${inputIndex} is ${netQty} (expected 0 for delta model).`,
+          message: `Net flow from input ${inputState.id} is ${netQty} (expected 0 for delta model).`,
         };
       }
     }
@@ -116,28 +117,28 @@ export class Invariants {
   // Intent: Validate composition conservation (varietals, real/nominal dollars)
   // Reasoning: Composition deltas must net to zero for each input state
   static assertCompositionConservation(operation: WineryOperation): ValidationResult {
-    if (!operation.flows || !operation.inputStateIds) {
+    if (!operation.flows || !operation.inputStates) {
       return { ok: true };
     }
 
-    // Group flows by input state index
-    const flowsByInput = new Map<number, FlowSpec[]>();
+    // Group flows by input state ID
+    const flowsByInput = new Map<string, FlowToRelationship[]>();
     for (const flow of operation.flows) {
-      if (!flowsByInput.has(flow.from)) {
-        flowsByInput.set(flow.from, []);
+      if (!flowsByInput.has(flow.from.id)) {
+        flowsByInput.set(flow.from.id, []);
       }
-      flowsByInput.get(flow.from)!.push(flow);
+      flowsByInput.get(flow.from.id)!.push(flow);
     }
 
     // Validate composition for each input
-    for (let inputIndex = 0; inputIndex < operation.inputStateIds.length; inputIndex++) {
-      const flowsFromInput = flowsByInput.get(inputIndex) || [];
+    for (const inputState of operation.inputStates) {
+      const flowsFromInput = flowsByInput.get(inputState.id) || [];
       
       if (flowsFromInput.length === 0) continue; // No flows means no change
 
       // Sum all composition deltas
       const netComposition = flowsFromInput.reduce(
-        (sum, flow) => this.addCompositions(sum, flow.composition),
+        (sum, flow) => this.addCompositions(sum, flow.properties),
         {} as Partial<QuantifiedComposition>
       );
 
@@ -146,7 +147,7 @@ export class Invariants {
         return {
           ok: false,
           code: "COMPOSITION_NOT_CONSERVED",
-          message: `Composition deltas don't net to zero for input ${inputIndex}.`,
+          message: `Composition deltas don't net to zero for input ${inputState.id}.`,
         };
       }
     }
@@ -157,18 +158,14 @@ export class Invariants {
   // Intent: Validate nominal dollar conservation across entire operation
   // Reasoning: Nominal dollars must ALWAYS balance, unlike real dollars which can flow to loss
   static assertNominalDollarConservation(operation: WineryOperation): ValidationResult {
-    if (!operation.inputStateIds || !operation.outputSpecs) {
+    if (!operation.inputStates || !operation.outputStates) {
       return { ok: true };
     }
-
-    // Calculate total nominal dollars from input states (would need to fetch from DB in real impl)
-    // For now, validate that flows balance (which is checked in composition conservation)
-    // This is a placeholder for more comprehensive check that would query actual input states
 
     // Check that all flows have consistent nominal dollar handling
     if (operation.flows) {
       const totalNominalFlow = operation.flows.reduce(
-        (sum, flow) => sum + (flow.composition?.nominalDollars || 0),
+        (sum, flow) => sum + (flow.properties?.nominalDollars || 0),
         0
       );
 
@@ -185,29 +182,30 @@ export class Invariants {
     return { ok: true };
   }
 
-  // Intent: Validate flow indices are within bounds
-  // Reasoning: Prevents index out-of-bounds errors when creating FLOW_TO relationships
+  // Intent: Validate flow references are valid state IDs
+  // Reasoning: Prevents invalid state references when creating FLOW_TO relationships
   static assertValidFlowIndices(operation: WineryOperation): ValidationResult {
-    if (!operation.flows || !operation.inputStateIds || !operation.outputSpecs) {
+    if (!operation.flows || !operation.inputStates || !operation.outputStates) {
       return { ok: true };
     }
 
-    const maxInputIndex = operation.inputStateIds.length - 1;
-    const maxOutputIndex = operation.outputSpecs.length - 1;
+    const validInputIds = new Set(operation.inputStates.map(s => s.id));
+    const validOutputIds = new Set(operation.outputStates.map(s => s.id));
+    const allValidIds = new Set([...validInputIds, ...validOutputIds]);
 
     for (const flow of operation.flows) {
-      if (flow.from < 0 || flow.from > maxInputIndex) {
+      if (!allValidIds.has(flow.from.id)) {
         return {
           ok: false,
-          code: "INVALID_FLOW_INDEX",
-          message: `Flow from index ${flow.from} is out of bounds (max: ${maxInputIndex}).`,
+          code: "INVALID_FLOW_REFERENCE",
+          message: `Flow from state ${flow.from.id} references unknown state.`,
         };
       }
-      if (flow.to < 0 || flow.to > maxOutputIndex) {
+      if (!allValidIds.has(flow.to.id)) {
         return {
           ok: false,
-          code: "INVALID_FLOW_INDEX",
-          message: `Flow to index ${flow.to} is out of bounds (max: ${maxOutputIndex}).`,
+          code: "INVALID_FLOW_REFERENCE",
+          message: `Flow to state ${flow.to.id} references unknown state.`,
         };
       }
     }
@@ -227,13 +225,13 @@ export class Invariants {
     results.push(this.assertValidFlowIndices(operation));
 
     // Asynchronous validations (require DB access)
-    if (operation.inputStateIds) {
-      results.push(await this.assertInputStatesAreCurrent(operation.inputStateIds));
+    if (operation.inputStates) {
+      results.push(await this.assertInputStatesAreCurrent(operation.inputStates.map(s => s.id)));
     }
 
-    if (operation.outputSpecs) {
-      for (const spec of operation.outputSpecs) {
-        results.push(await this.assertSingleCurrentState(spec.containerId));
+    if (operation.outputStates) {
+      for (const outputState of operation.outputStates) {
+        results.push(await this.assertSingleCurrentState(outputState.container.id));
       }
     }
 

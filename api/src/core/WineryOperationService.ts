@@ -1,5 +1,6 @@
-import { WineryOperation, FlowSpec } from "../domain/nodes/WineryOperation";
+import { WineryOperation } from "../domain/nodes/WineryOperation";
 import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
+import { FlowToRelationship } from "../domain/relationships/Flow_to";
 import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
 import { ContainerRepo } from "../db/repositories/ContainerRepo";
 import { getDriver } from "../db/client";
@@ -58,6 +59,37 @@ export class WineryOperationService {
       nominalDollars: (toState.quantifiedComposition.nominalDollars || 0) + transferNominal
     };
 
+    // Build output states
+    const outFromState: ContainerState = {
+      id: `${id}__${fromState.container.id}`,
+      tenantId,
+      createdAt,
+      timestamp: createdAt,
+      container: fromState.container,
+      quantifiedComposition: {
+        qty: outFromQty,
+        unit: fromState.quantifiedComposition.unit,
+        varietals: outFromComp.varietals,
+        realDollars: outFromComp.realDollars,
+        nominalDollars: outFromComp.nominalDollars
+      }
+    };
+
+    const outToState: ContainerState = {
+      id: `${id}__${toState.container.id}`,
+      tenantId,
+      createdAt,
+      timestamp: createdAt,
+      container: toState.container,
+      quantifiedComposition: {
+        qty: outToQty,
+        unit: toState.quantifiedComposition.unit,
+        varietals: outToComp.varietals,
+        realDollars: outToComp.realDollars,
+        nominalDollars: outToComp.nominalDollars
+      }
+    };
+
     // Assemble WineryOperation
     const op: WineryOperation = {
       id,
@@ -65,31 +97,42 @@ export class WineryOperationService {
       tenantId,
       createdAt,
       description,
-      inputStateIds: [fromState.id, toState.id],
-      outputSpecs: [
-        {
-          containerId: fromState.container.id,
-          stateId: `${id}__${fromState.container.id}`,
-          qty: outFromQty,
-          unit: fromState.quantifiedComposition.unit,
-          varietals: outFromComp.varietals,
-          realDollars: outFromComp.realDollars,
-          nominalDollars: outFromComp.nominalDollars
-        },
-        {
-          containerId: toState.container.id,
-          stateId: `${id}__${toState.container.id}`,
-          qty: outToQty,
-          unit: toState.quantifiedComposition.unit,
-          varietals: outToComp.varietals,
-          realDollars: outToComp.realDollars,
-          nominalDollars: outToComp.nominalDollars
-        }
-      ],
+      inputStates: [fromState, toState],
+      outputStates: [outFromState, outToState],
       flows: [
-        { from: 0, to: 1, qty: qty, unit: fromState.quantifiedComposition.unit, composition: { varietals: transferVarietals, realDollars: transferReal, nominalDollars: transferNominal } },
-        { from: 0, to: 0, qty: -qty, unit: fromState.quantifiedComposition.unit, composition: { varietals: scaleVarietals(transferVarietals, -1), realDollars: -transferReal, nominalDollars: -transferNominal } },
-        { from: 1, to: 1, qty: 0, unit: toState.quantifiedComposition.unit, composition: {} }
+        { 
+          from: { id: fromState.id },
+          to: { id: outToState.id },
+          properties: {
+            qty: qty,
+            unit: fromState.quantifiedComposition.unit,
+            varietals: transferVarietals,
+            realDollars: transferReal,
+            nominalDollars: transferNominal
+          }
+        },
+        { 
+          from: { id: fromState.id },
+          to: { id: outFromState.id },
+          properties: {
+            qty: -qty,
+            unit: fromState.quantifiedComposition.unit,
+            varietals: scaleVarietals(transferVarietals, -1),
+            realDollars: -transferReal,
+            nominalDollars: -transferNominal
+          }
+        },
+        { 
+          from: { id: toState.id },
+          to: { id: outToState.id },
+          properties: {
+            qty: 0,
+            unit: toState.quantifiedComposition.unit,
+            varietals: {},
+            realDollars: 0,
+            nominalDollars: 0
+          }
+        }
       ]
     };
 
@@ -124,31 +167,16 @@ export class WineryOperationService {
   // Intent: Validate that output containers exist in database
   // Reasoning: Prevents creating operations with invalid container references
   private static async validateContainersExist(operation: WineryOperation): Promise<void> {
-    if (operation.outputSpecs) {
+    if (operation.outputStates) {
       const driver = getDriver();
       const session = driver.session();
       try {
         const containerRepo = new ContainerRepo(session);
-        for (const outputSpec of operation.outputSpecs) {
-          const container = await containerRepo.findById(outputSpec.containerId);
+        for (const outputState of operation.outputStates) {
+          const container = await containerRepo.findById(outputState.container.id);
           if (!container) {
-            throw new Error(`Output container ${outputSpec.containerId} not found`);
+            throw new Error(`Output container ${outputState.container.id} not found`);
           }
-        }
-      } finally {
-        await session.close();
-      }
-    }
-
-    // Legacy support for single output container
-    if (operation.outputContainerId && !operation.outputSpecs) {
-      const driver = getDriver();
-      const session = driver.session();
-      try {
-        const containerRepo = new ContainerRepo(session);
-        const container = await containerRepo.findById(operation.outputContainerId);
-        if (!container) {
-          throw new Error(`Output container ${operation.outputContainerId} not found`);
         }
       } finally {
         await session.close();
