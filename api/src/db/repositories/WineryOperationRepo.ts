@@ -67,21 +67,21 @@ export class WineryOperationRepo {
           description: op.description ?? null,
           tenantId: op.tenantId,
           createdAt: op.createdAt.toISOString(),
-          inputStateIds: op.inputStateIds || [],
-          outputSpecs: (op.outputSpecs || []).map(s => ({
-            containerId: s.containerId,
-            stateId: s.stateId,
-            qty: s.qty,
-            unit: s.unit,
-            composition: JSON.stringify(s.composition)
+          inputStateIds: op.inputStates?.map(s => s.id) || [],
+          outputSpecs: (op.outputStates || []).map(s => ({
+            containerId: s.container.id,
+            stateId: s.id,
+            qty: s.quantifiedComposition.qty,
+            unit: s.quantifiedComposition.unit,
+            composition: JSON.stringify(s.quantifiedComposition.attributes)
           })),
           flows: (op.flows || []).map(f => ({
             from: f.from,
             to: f.to,
-            qty: f.qty,
-            unit: f.unit,
-            composition: JSON.stringify(f.composition),
-            deltaTime: f.deltaTime ?? 0
+            qty: f.properties.qty,
+            unit: f.properties.unit,
+            composition: JSON.stringify(f.properties.attributes),
+            deltaTime: f.properties.deltaTime ?? 0
           }))
         };
 

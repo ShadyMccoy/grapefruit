@@ -2,10 +2,12 @@ import express, { Request, Response } from "express";
 import { WineryOperation } from "./domain/nodes/WineryOperation";
 import { WineryOperationService } from "./core/WineryOperationService";
 import { ContainerState } from "./domain/nodes/ContainerState";
+import { FlowToRelationship } from "./domain/relationships/Flow_to";
+import { QuantifiedComposition } from "./domain/nodes/QuantifiedComposition";
 import {
-  calculateFlowComposition,
-  calculateBlendComposition,
-  generateFlowCompositions
+  distributeComposition,
+  blendCompositions,
+  compositionsEqual
 } from "./core/CompositionHelpers";
 
 import dotenv from "dotenv";
@@ -58,14 +60,14 @@ app.post("/api/operations", async (req: Request, res: Response) => {
 // Composition calculation helpers for front-end
 app.post("/api/composition/calculate-flow", async (req: Request, res: Response) => {
   try {
-    const { inputState, flowQty }: { inputState: ContainerState; flowQty: number } = req.body;
+    const { inputState, flowQty }: { inputState: ContainerState; flowQty: bigint } = req.body;
 
     if (!inputState || flowQty === undefined) {
       return res.status(400).json({ error: "Missing inputState or flowQty" });
     }
 
-    const composition = calculateFlowComposition(inputState, flowQty);
-    res.json({ composition });
+    const flowCompositions = distributeComposition(inputState.quantifiedComposition, [flowQty]);
+    res.json({ flowCompositions });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }
@@ -73,13 +75,13 @@ app.post("/api/composition/calculate-flow", async (req: Request, res: Response) 
 
 app.post("/api/composition/calculate-blend", async (req: Request, res: Response) => {
   try {
-    const { incomingState, flows } = req.body;
+    const { compositions }: { compositions: QuantifiedComposition[] } = req.body;
 
-    if (!incomingState || !flows || !Array.isArray(flows)) {
-      return res.status(400).json({ error: "Missing or invalid incomingState or flows array" });
+    if (!compositions || !Array.isArray(compositions)) {
+      return res.status(400).json({ error: "Missing or invalid compositions array" });
     }
 
-    const composition = calculateBlendComposition(incomingState, flows);
+    const composition = blendCompositions(compositions);
     res.json({ composition });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -88,14 +90,14 @@ app.post("/api/composition/calculate-blend", async (req: Request, res: Response)
 
 app.post("/api/composition/generate-transfer", async (req: Request, res: Response) => {
   try {
-    const { fromComposition, transferQty } = req.body;
+    const { fromComposition, transferQty }: { fromComposition: QuantifiedComposition; transferQty: bigint } = req.body;
 
     if (!fromComposition || transferQty === undefined) {
       return res.status(400).json({ error: "Missing fromComposition or transferQty" });
     }
 
-    const flows = generateFlowCompositions(fromComposition, transferQty);
-    res.json({ flows });
+    const flowCompositions = distributeComposition(fromComposition, [transferQty]);
+    res.json({ flowCompositions });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }

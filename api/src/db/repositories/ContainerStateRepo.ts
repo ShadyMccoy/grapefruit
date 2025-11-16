@@ -24,11 +24,7 @@ export class ContainerStateRepo {
         id: state.id,
         qty: state.quantifiedComposition.qty,
         unit: state.quantifiedComposition.unit,
-        composition: JSON.stringify({
-          varietals: state.quantifiedComposition.varietals,
-          realDollars: state.quantifiedComposition.realDollars,
-          nominalDollars: state.quantifiedComposition.nominalDollars
-        }),
+        composition: JSON.stringify(state.quantifiedComposition.attributes),
         timestamp: state.timestamp.toISOString(),
         tenantId: state.tenantId,
         createdAt: state.createdAt.toISOString(),
@@ -60,9 +56,7 @@ export class ContainerStateRepo {
         quantifiedComposition: {
           qty: s.qty,
           unit: s.unit,
-          varietals: comp.varietals,
-          realDollars: comp.realDollars,
-          nominalDollars: comp.nominalDollars
+          attributes: comp
         }
       } as ContainerState;
     });

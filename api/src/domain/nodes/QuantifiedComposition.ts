@@ -1,9 +1,7 @@
 // Shared payload interface for quantity, unit, and composition
 
 export interface QuantifiedComposition {
-  qty: number; // Quantity in h-units (1 h-unit = 1/10,000 unit)
+  qty: bigint; // Quantity in h-units (1 h-unit = 1/10,000 unit) - integer
   unit: "gal" | "lbs" | "$"; // Unit of measure
-  varietals?: Record<string, number>; // e.g., { "chardonnay": 950, "pinot": 800 } - absolute amounts
-  realDollars?: number;
-  nominalDollars?: number;
+  attributes: Record<string, bigint | Record<string, bigint>>; // Extensible attributes: varietals, dollars, etc. - all integers
 }

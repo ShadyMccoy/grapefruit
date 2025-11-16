@@ -1,85 +1,108 @@
 // Composition calculation helpers for domain operations
 // These utilities calculate flow compositions using exact integer math with deterministic rounding
 
-import { ContainerState, QuantifiedComposition } from "../domain/nodes/ContainerState";
-import { FlowToRelationship } from "../domain/relationships/Flow_to";
+import { QuantifiedComposition } from "../domain/nodes/QuantifiedComposition";
 
 /**
- * Calculates the composition of a flow based on the input state and flow quantity.
- * Uses integer division (floor) with remainder assignment to ensure conservation.
+ * Distributes composition attributes across multiple flows using deterministic rounding.
+ * Ensures conservation: sum of flow attributes equals total attributes.
  * 
- * Intent: Proportionally distribute composition attributes across flows using deterministic rounding.
- * For each attribute: c = floor(C * q / Q), with remainder assigned to last flow.
+ * Intent: Pure math function for proportional distribution with integer precision.
+ * No knowledge of states or flows - just quantities and attributes.
  */
-export function calculateFlowComposition(
-  inputState: ContainerState,
-  flowQty: number
-): Partial<QuantifiedComposition> {
-  if (flowQty === 0) {
-    return { varietals: {}, realDollars: 0, nominalDollars: 0 };
-  }
+export function distributeComposition(
+  fromComposition: QuantifiedComposition,
+  flowQtys: bigint[]
+): QuantifiedComposition[] {
+  const flowCompositions: QuantifiedComposition[] = [];
+  const totalQty = fromComposition.qty;
+  const totalAttributes = fromComposition.attributes;
 
-  const totalQty = inputState.quantifiedComposition.qty;
-  const result: Partial<QuantifiedComposition> = { varietals: {} };
+  // Initialize remaining qty and attributes
+  let remainingQty = totalQty;
+  let remainingAttributes = { ...totalAttributes };
 
-  // Calculate varietal amounts using integer division
-  if (inputState.quantifiedComposition.varietals) {
-    for (const [varietal, totalAmount] of Object.entries(inputState.quantifiedComposition.varietals)) {
-      const flowAmount = Math.floor((totalAmount * Math.abs(flowQty)) / totalQty);
-      result.varietals![varietal] = flowQty < 0 ? -flowAmount : flowAmount;
+  // Deep copy remainingAttributes for nested objects
+  for (const [key, value] of Object.entries(remainingAttributes)) {
+    if (typeof value === 'object') {
+      remainingAttributes[key] = { ...value };
     }
   }
 
-  // Calculate dollar amounts using integer division
-  if (inputState.quantifiedComposition.realDollars !== undefined) {
-    const flowDollars = Math.floor((inputState.quantifiedComposition.realDollars * Math.abs(flowQty)) / totalQty);
-    result.realDollars = flowQty < 0 ? -flowDollars : flowDollars;
-  }
+  // Iterate over flows, calculating each time with current remaining
+  for (let i = 0; i < flowQtys.length; i++) {
+    const flowQty = flowQtys[i] < 0n ? -flowQtys[i] : flowQtys[i]; // Absolute value
 
-  if (inputState.quantifiedComposition.nominalDollars !== undefined) {
-    const flowDollars = Math.floor((inputState.quantifiedComposition.nominalDollars * Math.abs(flowQty)) / totalQty);
-    result.nominalDollars = flowQty < 0 ? -flowDollars : flowDollars;
-  }
-
-  return result;
-}
-
-/**
- * Calculates the resulting composition when blending multiple flows into an incoming state.
- * Used to determine output container compositions by merging the incoming state with all flows.
- */
-export function calculateBlendComposition(
-  IncomingState: ContainerState,
-  IncomingFlows: QuantifiedComposition[]
-): QuantifiedComposition {
-  // Start with the incoming state's composition
-  const result: QuantifiedComposition = {
-    qty: IncomingState.quantifiedComposition.qty,
-    unit: IncomingState.quantifiedComposition.unit,
-    varietals: { ...IncomingState.quantifiedComposition.varietals },
-    realDollars: IncomingState.quantifiedComposition.realDollars || 0,
-    nominalDollars: IncomingState.quantifiedComposition.nominalDollars || 0
-  };
-
-  // Merge in all incoming flows
-  for (const flow of IncomingFlows) {
-    // Add quantity
-    result.qty += flow.qty;
-
-    // Merge varietals
-    if (flow.varietals) {
-      result.varietals = result.varietals || {};
-      for (const [varietal, amount] of Object.entries(flow.varietals)) {
-        result.varietals[varietal] = (result.varietals[varietal] || 0) + amount;
+    // Calculate flow attributes proportionally
+    const attributes: Record<string, bigint | Record<string, bigint>> = {};
+    for (const [key, value] of Object.entries(remainingAttributes)) {
+      if (typeof value === 'bigint') {
+        const amount = (value * flowQty) / remainingQty;
+        attributes[key] = amount;
+        // Decrement remaining
+        remainingAttributes[key] = value - amount;
+      } else if (typeof value === 'object') {
+        attributes[key] = {};
+        const remainingObj = remainingAttributes[key] as Record<string, bigint>;
+        for (const [subKey, subValue] of Object.entries(value)) {
+          const amount = (subValue * flowQty) / remainingQty;
+          (attributes[key] as Record<string, bigint>)[subKey] = amount;
+          remainingObj[subKey] -= amount;
+        }
       }
     }
 
-    // Add dollars
-    if (flow.realDollars !== undefined) {
-      result.realDollars = (result.realDollars || 0) + flow.realDollars;
-    }
-    if (flow.nominalDollars !== undefined) {
-      result.nominalDollars = (result.nominalDollars || 0) + flow.nominalDollars;
+    flowCompositions.push({
+      qty: flowQty,
+      unit: fromComposition.unit,
+      attributes
+    });
+
+    // Decrement remaining qty
+    remainingQty -= flowQty;
+  }
+
+  return flowCompositions;
+}
+
+/**
+ * Blends multiple compositions into a single resulting composition.
+ * Used for calculating output states from multiple inputs.
+ */
+export function blendCompositions(
+  compositions: QuantifiedComposition[]
+): QuantifiedComposition {
+  if (compositions.length === 0) {
+    throw new Error("Cannot blend empty compositions");
+  }
+
+  const result: QuantifiedComposition = {
+    qty: 0n,
+    unit: compositions[0].unit,
+    attributes: {}
+  };
+
+  // Sum all quantities and attributes
+  for (const comp of compositions) {
+    result.qty += comp.qty;
+
+    for (const [key, value] of Object.entries(comp.attributes)) {
+      if (typeof value === 'bigint') {
+        if (typeof result.attributes[key] === 'bigint') {
+          result.attributes[key] += value;
+        } else {
+          result.attributes[key] = value;
+        }
+      } else if (typeof value === 'object') {
+        if (!result.attributes[key] || typeof result.attributes[key] !== 'object') {
+          result.attributes[key] = { ...value };
+        } else {
+          const existing = result.attributes[key] as Record<string, bigint>;
+          for (const [subKey, subValue] of Object.entries(value)) {
+            existing[subKey] = (existing[subKey] || 0n) + subValue;
+          }
+        }
+      }
     }
   }
 
@@ -91,66 +114,30 @@ export function calculateBlendComposition(
  * Uses strict equality for integer h-units.
  */
 export function compositionsEqual(a: QuantifiedComposition, b: QuantifiedComposition): boolean {
-  // Compare varietals
-  const aVarietals = Object.keys(a.varietals || {});
-  const bVarietals = Object.keys(b.varietals || {});
+  if (a.qty !== b.qty || a.unit !== b.unit) return false;
 
-  if (aVarietals.length !== bVarietals.length) return false;
+  // Compare attributes
+  const aKeys = Object.keys(a.attributes);
+  const bKeys = Object.keys(b.attributes);
 
-  for (const varietal of aVarietals) {
-    const aAmount = a.varietals![varietal] || 0;
-    const bAmount = b.varietals![varietal] || 0;
-    if (aAmount !== bAmount) return false;
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    const aValue = a.attributes[key];
+    const bValue = b.attributes[key];
+    if (typeof aValue === 'bigint' && typeof bValue === 'bigint') {
+      if (aValue !== bValue) return false;
+    } else if (typeof aValue === 'object' && typeof bValue === 'object') {
+      const aSubKeys = Object.keys(aValue);
+      const bSubKeys = Object.keys(bValue);
+      if (aSubKeys.length !== bSubKeys.length) return false;
+      for (const subKey of aSubKeys) {
+        if ((aValue as Record<string, bigint>)[subKey] !== (bValue as Record<string, bigint>)[subKey]) return false;
+      }
+    } else {
+      return false; // type mismatch
+    }
   }
 
-  // Compare dollars
-  if ((a.realDollars || 0) !== (b.realDollars || 0)) return false;
-  if ((a.nominalDollars || 0) !== (b.nominalDollars || 0)) return false;
-
   return true;
-}
-
-/**
- * Generates quantified compositions for a transfer operation.
- * Calculates how to split a source composition into transferred and remaining portions.
- * 
- * Intent: Create balanced composition splits using deterministic rounding.
- * Returns array of [remaining composition, transferred composition]
- */
-export function generateFlowCompositions(
-  fromComposition: QuantifiedComposition,
-  flows: FlowToRelationship[]
-) : void {
-  // Create a temporary ContainerState for calculation
-  const tempState: ContainerState = {
-    id: 'temp',
-    tenantId: 'temp',
-    createdAt: new Date(),
-    timestamp: new Date(),
-    container: { id: 'temp' } as any,
-    quantifiedComposition: fromComposition
-  };
-
-  // Calculate compositions with integer division
-  const transferredFromComp = calculateFlowComposition(tempState, -transferQty);
-  const transferredToComp = calculateFlowComposition(tempState, transferQty);
-
-
-  // Return negative flow and positive flow as full QuantifiedComposition objects
-  return [
-    {
-      qty: -transferQty,
-      unit: fromComposition.unit,
-      varietals: transferredFromComp.varietals,
-      realDollars: transferredFromComp.realDollars,
-      nominalDollars: transferredFromComp.nominalDollars
-    },
-    {
-      qty: transferQty,
-      unit: fromComposition.unit,
-      varietals: transferredToComp.varietals,
-      realDollars: transferredToComp.realDollars,
-      nominalDollars: transferredToComp.nominalDollars
-    }
-  ];
 }

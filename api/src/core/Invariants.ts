@@ -100,9 +100,9 @@ export class Invariants {
     // Validate each input's net flow is zero
     for (const inputState of operation.inputStates) {
       const flowsFromInput = flowsByInput.get(inputState.id) || [];
-      const netQty = flowsFromInput.reduce((sum, flow) => sum + flow.properties.qty, 0);
+      const netQty = flowsFromInput.reduce((sum, flow) => sum + flow.properties.qty, 0n);
 
-      if (Math.abs(netQty) > 0.001) {
+      if (netQty !== 0n) {
         return {
           ok: false,
           code: "QUANTITY_NOT_CONSERVED",
@@ -165,12 +165,12 @@ export class Invariants {
     // Check that all flows have consistent nominal dollar handling
     if (operation.flows) {
       const totalNominalFlow = operation.flows.reduce(
-        (sum, flow) => sum + (flow.properties?.nominalDollars || 0),
-        0
+        (sum, flow) => sum + ((flow.properties.attributes?.["nominalDollars"] as bigint) || 0n),
+        0n
       );
 
       // In delta model, total should be zero
-      if (Math.abs(totalNominalFlow) > 0.001) {
+      if (totalNominalFlow !== 0n) {
         return {
           ok: false,
           code: "NOMINAL_DOLLARS_NOT_CONSERVED",
@@ -241,16 +241,17 @@ export class Invariants {
 
   // Helper: Check if composition is effectively zero
   private static isZeroComposition(composition: Partial<QuantifiedComposition>): boolean {
-    const tolerance = 0.001;
-
-    if (composition.varietals) {
-      for (const amount of Object.values(composition.varietals)) {
-        if (Math.abs(amount) > tolerance) return false;
+    if (composition.attributes) {
+      for (const value of Object.values(composition.attributes)) {
+        if (typeof value === 'bigint') {
+          if (value !== 0n) return false;
+        } else if (typeof value === 'object') {
+          for (const subValue of Object.values(value)) {
+            if (subValue !== 0n) return false;
+          }
+        }
       }
     }
-
-    if (Math.abs(composition.realDollars || 0) > tolerance) return false;
-    if (Math.abs(composition.nominalDollars || 0) > tolerance) return false;
 
     return true;
   }
@@ -259,22 +260,31 @@ export class Invariants {
   private static addCompositions(a: Partial<QuantifiedComposition>, b: Partial<QuantifiedComposition>): Partial<QuantifiedComposition> {
     const result: Partial<QuantifiedComposition> = {};
 
-    // Add varietals
-    if (a.varietals || b.varietals) {
-      result.varietals = { ...a.varietals };
-      if (b.varietals) {
-        for (const [varietal, amount] of Object.entries(b.varietals)) {
-          result.varietals[varietal] = (result.varietals[varietal] || 0) + amount;
+    // Add attributes generically
+    if (a.attributes || b.attributes) {
+      result.attributes = { ...a.attributes };
+      if (b.attributes) {
+        for (const [key, value] of Object.entries(b.attributes)) {
+          if (typeof value === 'bigint') {
+            if (result.attributes[key] === undefined) {
+              result.attributes[key] = value;
+            } else if (typeof result.attributes[key] === 'bigint') {
+              (result.attributes[key] as bigint) += value;
+            } else {
+              // mismatch, perhaps error or skip
+            }
+          } else if (typeof value === 'object') {
+            if (!result.attributes[key] || typeof result.attributes[key] !== 'object') {
+              result.attributes[key] = { ...value };
+            } else {
+              const existing = result.attributes[key] as Record<string, bigint>;
+              for (const [subKey, subValue] of Object.entries(value)) {
+                existing[subKey] = (existing[subKey] || 0n) + subValue;
+              }
+            }
+          }
         }
       }
-    }
-
-    // Add dollars
-    if (a.realDollars !== undefined || b.realDollars !== undefined) {
-      result.realDollars = (a.realDollars || 0) + (b.realDollars || 0);
-    }
-    if (a.nominalDollars !== undefined || b.nominalDollars !== undefined) {
-      result.nominalDollars = (a.nominalDollars || 0) + (b.nominalDollars || 0);
     }
 
     return result;

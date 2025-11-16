@@ -30,11 +30,7 @@ export class WeighTagRepo {
         vintage: weighTag.vintage,
         qty: weighTag.quantifiedComposition.qty,
         unit: weighTag.quantifiedComposition.unit,
-        composition: JSON.stringify({
-          varietals: weighTag.quantifiedComposition.varietals,
-          realDollars: weighTag.quantifiedComposition.realDollars,
-          nominalDollars: weighTag.quantifiedComposition.nominalDollars
-        }),
+        composition: JSON.stringify(weighTag.quantifiedComposition.attributes),
         tenantId: weighTag.tenantId,
         createdAt: weighTag.createdAt.toISOString(),
       }
@@ -75,9 +71,7 @@ export class WeighTagRepo {
       quantifiedComposition: {
         qty: w.qty,
         unit: w.unit,
-        varietals: comp.varietals,
-        realDollars: comp.realDollars,
-        nominalDollars: comp.nominalDollars
+        attributes: comp
       }
     } as WeighTag;
   }
@@ -97,9 +91,7 @@ export class WeighTagRepo {
         quantifiedComposition: {
           qty: w.qty,
           unit: w.unit,
-          varietals: comp.varietals,
-          realDollars: comp.realDollars,
-          nominalDollars: comp.nominalDollars
+          attributes: comp
         }
       } as WeighTag;
     });

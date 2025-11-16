@@ -5,7 +5,7 @@ import { WineryOperationRepo } from "../db/repositories/WineryOperationRepo";
 import { ContainerRepo } from "../db/repositories/ContainerRepo";
 import { getDriver } from "../db/client";
 import { Container } from "../domain/nodes/Container";
-import { generateFlowCompositions } from "./CompositionHelpers";
+import { distributeComposition, blendCompositions } from "./CompositionHelpers";
 
 export class WineryOperationService {
   // Intent: Build a transfer WineryOperation based on flows
@@ -18,57 +18,14 @@ export class WineryOperationService {
       type: OperationType;
       description?: string;
       fromContainers: ContainerState[];
-      flowQuantities: { fromStateId: string; toStateId: string; qty: number }[];
+      flowQuantities: { fromStateId: string; toStateId: string; qty: bigint }[];
     }): Promise<WineryOperation> {
-      // copy input states to new output states
-      const toContainers: ContainerState[] = params.fromContainers.map(state => ({
-        id: crypto.randomUUID(),
-        tenantId: params.tenantId,
-        createdAt: params.createdAt,
-        container: state.container,
-        quantifiedComposition: state.quantifiedComposition,
-        timestamp: params.createdAt,
-        flowsTo: [],
-        flowsFrom: []
-      }));
+      const toContainers = this.createOutputStates(params);
+      this.createFlows(params, toContainers);
+      this.assignFlowCompositions(params.fromContainers);
+      this.assignOutputCompositions(toContainers);
 
-      // iterate over flow quantities and add a new flow relationship objects to each input state
-      for (const flow of params.flowQuantities) {
-        const fromState = params.fromContainers.find(s => s.id === flow.fromStateId);
-        const toState = toContainers.find(s => s.container.id === flow.toStateId);
-        if (fromState && toState) {
-          fromState.flowsTo.push({
-            from: { id: fromState.id },
-            to: { id: toState.id },
-            properties: {
-              qty: flow.qty,
-              unit: fromState.quantifiedComposition.unit
-            }
-          });
-          toState.flowsFrom.push(fromState.flowsTo[fromState.flowsTo.length - 1]);
-        }
-      }
-
-      //iterate over each input state to calculate the composition of each flows to
-      for (const fromState of params.fromContainers) {
-        generateFlowCompositions(
-          fromState.quantifiedComposition,
-          fromState.flowsTo)
-        ;
-      }
-
-      // create the operation object
-      const op: WineryOperation = {
-        id: params.id,
-        tenantId: params.tenantId,
-        createdAt: params.createdAt,
-        type: params.type,
-        description: params.description,
-        inputStates: params.fromContainers,
-        outputStates: toContainers
-      };
-
-      return op;
+      return this.buildOperation(params, toContainers);
     }
 
   static async validateAndCommitOperation(operation: WineryOperation): Promise<WineryOperation> {
@@ -117,6 +74,89 @@ export class WineryOperationService {
     }
   }
 
+  private static createOutputStates(params: {
+    tenantId: string;
+    createdAt: Date;
+    fromContainers: ContainerState[];
+  }): ContainerState[] {
+    return params.fromContainers.map(state => ({
+      id: crypto.randomUUID(),
+      tenantId: params.tenantId,
+      createdAt: params.createdAt,
+      container: state.container,
+      quantifiedComposition: state.quantifiedComposition,
+      timestamp: params.createdAt,
+      flowsTo: [],
+      flowsFrom: []
+    }));
+  }
+
+  private static createFlows(
+    params: {
+      fromContainers: ContainerState[];
+      flowQuantities: { fromStateId: string; toStateId: string; qty: bigint }[];
+    },
+    toContainers: ContainerState[]
+  ): void {
+    for (const flow of params.flowQuantities) {
+      const fromState = params.fromContainers.find(s => s.id === flow.fromStateId);
+      const toState = toContainers.find(s => s.container.id === flow.toStateId);
+      if (fromState && toState) {
+        fromState.flowsTo.push({
+          from: { id: fromState.id },
+          to: { id: toState.id },
+          properties: {
+            qty: flow.qty,
+            unit: fromState.quantifiedComposition.unit,
+            attributes: {}
+          }
+        });
+        toState.flowsFrom.push(fromState.flowsTo[fromState.flowsTo.length - 1]);
+      }
+    }
+  }
+
+  private static assignFlowCompositions(fromContainers: ContainerState[]): void {
+    for (const fromState of fromContainers) {
+      const flowQtys = fromState.flowsTo.map(f => f.properties.qty);
+      const flowComps = distributeComposition(fromState.quantifiedComposition, flowQtys);
+      for (let i = 0; i < fromState.flowsTo.length; i++) {
+        fromState.flowsTo[i].properties = flowComps[i]; // qty, unit, attributes
+      }
+    }
+  }
+
+  private static assignOutputCompositions(toContainers: ContainerState[]): void {
+    for (const toContainer of toContainers) {
+      const incomingCompositions = toContainer.flowsFrom.map(flow => flow.properties);
+      if (incomingCompositions.length > 0) {
+        toContainer.quantifiedComposition = blendCompositions(incomingCompositions);
+      }
+    }
+  }
+
+  private static buildOperation(
+    params: {
+      id: string;
+      tenantId: string;
+      createdAt: Date;
+      type: OperationType;
+      description?: string;
+      fromContainers: ContainerState[];
+    },
+    toContainers: ContainerState[]
+  ): WineryOperation {
+    return {
+      id: params.id,
+      tenantId: params.tenantId,
+      createdAt: params.createdAt,
+      type: params.type,
+      description: params.description,
+      inputStates: params.fromContainers,
+      outputStates: toContainers
+    };
+  }
+
   // Helper: resolve container head via CURRENT_STATE pointer, or fallback to last state with no outgoing FLOW_TO
   private static async getHeadState(containerId: string): Promise<ContainerState | null> {
     const driver = getDriver();
@@ -148,7 +188,7 @@ export class WineryOperationService {
       const node = res.records[0].get("head");
       if (!node) return null;
       const s = node.properties as any;
-      const qtyNum = s.qty && typeof s.qty.toNumber === 'function' ? s.qty.toNumber() : (typeof s.qty === 'bigint' ? Number(s.qty) : (s.qty as number));
+      const qtyNum = s.qty && typeof s.qty.toNumber === 'function' ? BigInt(s.qty.toNumber()) : (typeof s.qty === 'bigint' ? s.qty : BigInt(s.qty as number));
       const comp = s.composition ? JSON.parse(s.composition) : {};
       return {
         id: s.id,
@@ -158,9 +198,11 @@ export class WineryOperationService {
         quantifiedComposition: {
           qty: qtyNum,
           unit: s.unit || 'gal',
-          varietals: comp.varietals,
-          realDollars: comp.realDollars,
-          nominalDollars: comp.nominalDollars
+          attributes: {
+            varietals: comp.varietals ? Object.fromEntries(Object.entries(comp.varietals).map(([k, v]) => [k, BigInt(v as number)])) : {},
+            realDollars: comp.realDollars ? BigInt(comp.realDollars as number) : 0n,
+            nominalDollars: comp.nominalDollars ? BigInt(comp.nominalDollars as number) : 0n
+          }
         },
         timestamp: new Date(s.timestamp),
         flowsTo: [],

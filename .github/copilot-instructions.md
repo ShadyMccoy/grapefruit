@@ -8,277 +8,49 @@ name: HelloGithubAgent
 description: Basic project instructions for ai collaboration
 ---
 
-# Github Agent
-
 # Grapefruit Copilot Instructions
 
 ## Project Overview
-Grapefruit is a **winery traceability system** modeling the cellar as a **directed acyclic graph (DAG)** in Neo4j. Every container transformation produces **immutable states** with **mathematically enforced conservation** of qty, composition, and monetary values.
+Grapefruit is a winery traceability system modeling the cellar as a directed acyclic graph (DAG) in Neo4j. Every container transformation produces immutable states with mathematically enforced conservation of qty, composition, and monetary values.
 
 ## Critical Concepts
-
-### Ontology (Truth Layer)
-- **Container**: Physical vessel (tank, barrel, press, bottle) or virtual (gain/loss, loss)
-- **ContainerState**: Immutable snapshot at timestamp T with qty, composition, real/nominal dollars
-- **WineryOperation**: Transformation consuming input states → producing output states
-- **FLOW_TO relationships**: Edges between states with ΔT (delta time) and composition
-
-### Dual-Dollar Accounting
-- **Real dollars**: Flow only with physical wine (affected by losses/evaporation)
-- **Nominal dollars**: Accounting value; must be conserved across all operations
-- **Loss containers**: Virtual containers for both gains (negative qtys) and losses (positive qtys); adjust real $ while preserving nominal $ conservation
-
-### Invariants (see `api/src/core/Invariants.ts`)
-Invariants are implemented and enforced in `WineryOperationService.validateAndCommitOperation()` to ensure mathematical integrity before database commits.
+- **Ontology**: Container (tank/barrel/bottle/loss), ContainerState (immutable snapshot with qty/composition), WineryOperation (transformation).
+- **Dual-Dollar Accounting**: Real dollars flow with physical wine; nominal dollars conserved for accounting.
+- **Mental Model**: Operations as mixes (N inputs → M outputs) with delta-based conservation—net flows from each input state sum to zero for qty, composition, and dollars.
+- **Invariants**: Enforced in `WineryOperationService.validateAndCommitOperation()` for qty, composition, lineage, and dollar balance.
+- **H-Units**: Integer precision (1/10,000 gallon) to avoid floating-point drift.
 
 ## Architecture
-
 ```
 api/src/
 ├── domain/          # TypeScript interfaces (Container, ContainerState, WineryOperation)
-├── db/repositories/ # Cypher query abstractions (ContainerRepo, ContainerStateRepo)
+├── db/repositories/ # Cypher query abstractions (ContainerRepo, etc.)
 ├── core/            # Invariants enforcement and ValidationResult
 └── scripts/         # Seed data and test workflows
 ```
 
-### Repository Pattern
-- All Neo4j access via typed repository classes
-- Repositories accept/return domain interfaces, NOT Neo4j objects
-- Example: `ContainerRepo.create(container: Container): Promise<void>`
-
-### Domain Types
-All entities extend `BaseNode`:
-```typescript
-interface BaseNode {
-  id: string;
-  tenantId: string;
-  createdAt: Date;
-}
-```
-
-**Current Status**:
-- ✅ Container type union: `"tank" | "barrel" | "bottle" | "loss"` - implemented
-- ✅ Volume in h-units (1 h-unit = 1/10,000 gallon), not `volumeLiters: number` - implemented
-- ✅ ContainerState has `realDollars` and `nominalDollars` properties - implemented
-- ✅ Invariants implemented and active
-- 🔄 Various type definitions in flux during ontology validation phase - ongoing
-
 ## Development Workflow
-
-### Start Environment
-```powershell
-docker compose up -d  # Starts Neo4j on ports 7474 (browser) and 7687 (bolt)
-```
-
-### Seed Database
-```powershell
-# Seed comprehensive test data (containers, states, operations)
-cd api
-npx tsx src/scripts/seedAll.ts
-```
-
-### Run API Server
-```powershell
-cd api
-npm run dev  # ts-node-dev with hot reload
-```
-
-### Neo4j Browser Queries
-Access http://localhost:7474 (auth: `neo4j/testpassword`)
-```cypher
-// View operation lineage
-MATCH (c:Container)-[:STATE_OF]->(s:ContainerState)<-[:WINERY_OP_OUTPUT]-(op:WineryOperation)
-RETURN c, s, op
-
-// Trace container history
-MATCH path = (initial:ContainerState)-[:FLOW_TO*]->(current:ContainerState)
-WHERE NOT (initial)<-[:FLOW_TO]-()
-RETURN path
-```
+- **Start Environment**: `docker compose up -d` (Neo4j on 7474/7687)
+- **Seed Database**: `cd api; npx tsx src/scripts/seedAll.ts`
+- **Run API Server**: `cd api; npm run dev` (ts-node-dev hot reload)
+- **Neo4j Browser**: http://localhost:7474 (neo4j/testpassword)
 
 ## Coding Conventions
-
-### Naming from Ontology
-- Use **exact terminology** from `docs/GRAPH_MODEL.md`: Container, ContainerState, WineryOperation
-- Relationship types: `STATE_OF`, `FLOW_TO`, `WINERY_OP_INPUT`, `WINERY_OP_OUTPUT`
-- Never abbreviate domain terms (avoid "state" when you mean "ContainerState")
-
-### Determinism Requirement
-- **No randomness, timestamps, or environmental variance** in domain logic
-- Identical inputs → identical graph results
-- Timestamps come from operation metadata, not `Date.now()` in business logic
-
-### Intent Comments
-When generating domain/repository code, add intent comments:
-```typescript
-// Intent: Create ContainerState preserving volume and nominal balance
-// Reasoning: Inputs validated; lineage preserved; invariant check required before commit
-```
-
-### Type Safety
-- All domain objects are strongly typed interfaces
-- Cypher queries return plain objects → map to interfaces with `as Container`
-- Convert Neo4j DateTime to `Date` when reading: `new Date(c.createdAt)`
-
-### Invariant Enforcement
-Before committing any write operation (once implemented):
-```typescript
-const violations = await invariants.validateOperation(operation);
-if (violations.length > 0) {
-  throw new InvariantViolationError(violations);
-}
-```
-**Note**: This pattern is planned but not yet enforced. Focus on getting domain model right first.
+- **Naming**: Use exact ontology terms (Container, ContainerState, WineryOperation); no abbreviations.
+- **Determinism**: No randomness/timestamps in domain logic; identical inputs → identical outputs.
+- **Intent Comments**: Add `// Intent: ... // Reasoning: ...` for domain/repo code.
+- **Type Safety**: All domain objects strongly typed; map Neo4j results to interfaces.
+- **Repository Pattern**: All Neo4j access via typed repos returning domain interfaces.
 
 ## Key Files
+- `ROADMAP.md` — Development phases
+- `api/src/domain/README.md` — Domain model details
+- `api/src/db/README.md` — Graph structure and relationships
+- `api/src/core/README.md` — Invariants and operation algebra
+- `SETUP.md` — Environment setup
 
-### Documentation (Read First)
-- `ROADMAP.md` — Development roadmap and milestone tracking
-- `README.md` — Project overview and current phase
-- `api/src/README.md` — API architecture and service overview
-- `api/src/domain/README.md` — Domain model, operations, and invariants
-- `api/src/db/README.md` — Graph database structure and relationships
-- `api/src/core/README.md` — Invariants, validation, and operation algebra
-- `SETUP.md` — Environment setup and development workflow
-
-### Domain Model
-- `api/src/domain/nodes/` — Core entity interfaces
-- `api/src/domain/relationships/Flow_to.ts` — FLOW_TO relationship types
-
-### Database Layer
-- `api/src/db/client.ts` — Neo4j driver singleton
-- `api/src/db/repositories/` — Typed Cypher query wrappers
-
-### Current Phase
-**Ontology validation** — proving graph model integrity before building APIs.
-
-Completed:
-- Solidifying domain model (Container types, volume units, dollar tracking)
-- Testing operation workflows with scripts
-- Cleaning up type inconsistencies ("slop")
-- Repository pattern implementation
-- Invariants planned but currently commented out
-
-Immediate Next Steps:
-- **Type Expansion:** Domain types expanded (WeighTags, Appellation, Vineyard, Varietal, Block)
-- **Data Scale Testing:** Expand seeding to larger datasets (10k, 100k, 100M operations)
-- **Operation Diversity:** Implement additional operation types beyond basic transfers
-- **Performance Validation:** Test query performance and scalability
-- **Query API Development:** Build endpoints for lineage and provenance queries
-- **Composition Algebra Refinement:** Validate and refine the mental model based on testing results
-- **Prototype Delivery:** Clean codebase with minimal frontend preparation
-
-## Common Patterns
-
-### Creating Operations
-Use `WineryOperationService.buildWineryOperation()` to construct operations from flows, then `validateAndCommitOperation()` to enforce invariants and persist.
-
-```typescript
-// 1. Fetch current states
-const inputStates = await stateRepo.getCurrentStates([containerId1, containerId2]);
-
-// 2. Build operation with flows
-const op = await WineryOperationService.buildWineryOperation({
-  id: 'op123',
-  tenantId: 'winery1',
-  createdAt: new Date(),
-  description: 'Blend tanks',
-  fromContainers: inputStates,
-  flowQuantities: [
-    { fromStateId: inputStates[0].id, toStateId: containerId2, qty: 500 },
-    { fromStateId: inputStates[1].id, toStateId: containerId2, qty: 300 }
-  ]
-});
-
-// 3. Validate and commit
-const committedOp = await WineryOperationService.validateAndCommitOperation(op);
-```
-
-### Handling Losses
-Include Loss container as input with negative volume for gains or positive for losses:
-```typescript
-const lossContainer = await containerRepo.findByType('loss');
-const lossState = await stateRepo.getCurrentState(lossContainer.id);
-// Loss containers balance operations: negative volumes = gains, positive = losses
-// Real dollars adjust with volume; nominal dollars remain conserved
-```
-
-## Anti-Patterns to Avoid
-- ❌ Mutating existing ContainerState nodes
-- ❌ Creating operations without checking invariants (when implemented)
-- ❌ Using floating-point arithmetic for quantities (use integer h-units: 1/10,000 gallon or pound)
-- ❌ Introducing non-deterministic logic in repositories
-- ❌ Direct Cypher queries outside repositories
-- ❌ Assuming current code is final — model in flux, expect "slop" during ontology validation
-
-## 🤖 AI Collaboration Guidelines
-
-Grapefruit is designed for **AI–human co-development**. This section defines how AI agents and human contributors should reason about, modify, and extend the system.
-
-### Purpose
-To ensure AI-generated code:
-- Preserves **truth invariants**
-- Matches **ontology terminology**
-- Produces **explainable, auditable** reasoning and code
-
-### Reasoning Hierarchy
-When generating or editing code, AI agents should reason in this order:
-
-1. **Graph Ontology** → (`api/src/domain/README.md`, `api/src/db/README.md`)
-2. **Domain & Repositories** → (`api/src/domain/`, `api/src/db/repositories/`)
-3. **Workflow Semantics** → (`api/src/core/`, `api/src/scripts/`)
-4. **Integration Logic** → API endpoints, ERP interfaces
-5. **Infrastructure** → Docker, environment, CI/CD
-
-Never modify code without checking alignment with existing documentation and patterns.
-
-### Coding Guidelines
-- Use **precise naming** from the ontology (Container, ContainerState, WineryOperation)
-- Always **explain intent** in comments first — not just implementation
-- When uncertain, **ask or annotate** assumptions clearly
-- Do not introduce randomness, timestamps, or environmental variance
-- Maintain **determinism** across all generated functions
-- Use h-units for quantities (integer precision)
-
-### Commenting Convention
-```ts
-// Intent: Create new ContainerState preserving qty and nominal balance
-// Reasoning: Inputs validated; lineage preserved; invariant check planned but not yet enforced
-```
-
-AI collaborators must leave these "intent" comments for human reviewers.
-
-### Human Oversight
-All schema or ontology changes require human review and approval.
-
-AI may propose modifications but must flag them as `// Suggestion:` or `// Requires review:`.
-
-Merge actions should only occur after validation of balance and lineage logic.
-
-### Example: Good AI Contribution
-```ts
-// Intent: Implement Loss container adjustment during blend operations
-// Suggestion: Include loss container in operation inputs for evaporation tracking
-// Requires review: Verify loss handling logic aligns with dual-dollar accounting
-
-const lossContainer = await ContainerRepo.findByType('loss');
-const lossState = await ContainerStateRepo.findById(lossContainer.id); // Current loss state
-const opId = await WineryOperationRepo.createOperation(
-  { id: 'blendOp', tenantId: 'winery1', createdAt: new Date(), type: 'blend', description: 'Blend with loss adjustment' },
-  ['inputState1', 'inputState2', lossState.id], // Include loss as input
-  [{ containerId: 'outputTank', stateId: 'newState', qty: 195, unit: 'gal', composition: { realDollars: 950, nominalDollars: 1000 } }], // Adjusted for 5 gal loss
-  [] // flows
-);
-```
-
-### Goal
-AI collaboration in Grapefruit should amplify precision, not creativity. Every contribution must strengthen auditability.
-
-### Reminders
-
-Before making changes, explain what you will do first.
-You are working with the creator of the Grapefruit project, so be sure to align with their vision and terminology. I have deep domain knowledge and will review all changes carefully. Use me to provide any direction on specifics of the winery graph model or application logic especially around types and signatures.
-
-When doing powershell commands separate commands with ; and not &&
-
-Before running scripts that modify the database, ensure you have cleaned and seeded the database with test data.
+## AI Collaboration Guidelines
+- Reason in hierarchy: Ontology → Domain & Repositories → Workflow Semantics → Integration
+- Preserve truth invariants and auditability
+- Flag schema/ontology changes for human review
+- Use precise terminology from docs
