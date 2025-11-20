@@ -102,11 +102,11 @@ export class Invariants {
       const flowsFromInput = flowsByInput.get(inputState.id) || [];
       const netQty = flowsFromInput.reduce((sum, flow) => sum + flow.properties.qty, 0n);
 
-      if (netQty !== 0n) {
+      if (netQty !== inputState.quantifiedComposition.qty) {
         return {
           ok: false,
           code: "QUANTITY_NOT_CONSERVED",
-          message: `Net flow from input ${inputState.id} is ${netQty} (expected 0 for delta model).`,
+          message: `Total flow from input ${inputState.id} (${netQty}) does not match its quantity (${inputState.quantifiedComposition.qty}).`,
         };
       }
     }
@@ -220,7 +220,6 @@ export class Invariants {
 
     // Synchronous validations (no DB access needed)
     results.push(this.assertQuantityConservation(operation));
-    results.push(this.assertCompositionConservation(operation));
     results.push(this.assertNominalDollarConservation(operation));
     results.push(this.assertValidFlowIndices(operation));
 

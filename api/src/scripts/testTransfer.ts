@@ -1,74 +1,119 @@
-// Test transfer operation
+// Deterministic transfer test: move 50 gallons from Tank A to Tank B.
 import { WineryOperationService } from "../core/WineryOperationService";
-import { WineryOperation } from "../domain/nodes/WineryOperation";
+import { ContainerRepo } from "../db/repositories/ContainerRepo";
+import { ContainerStateRepo } from "../db/repositories/ContainerStateRepo";
+import { Container } from "../domain/nodes/Container";
+import { ContainerState } from "../domain/nodes/ContainerState";
+import { getDriver } from "../db/client";
+import { replacer } from "../util/json";
 
 async function testTransfer() {
-  // Example transfer operation: move 50 gallons from tankA to tankB
-  const transferOp: WineryOperation = {
-    id: "transfer_test_001",
-    type: "transfer",
-    description: "Transfer 50 gallons from Tank A to Tank B",
-    tenantId: "winery1",
-    createdAt: new Date(),
-
-    // Input states (current states of both containers)
-    inputStateIds: ["state_tankA_initial", "state_tankB_initial"],
-
-    // Output specifications (new states to create)
-    outputSpecs: [
-      {
-        containerId: "tankA",
-        stateId: "state_tankA_after_transfer",
-        qty: 950, // 1000 - 50
-        unit: "gal",
-        composition: { varietals: { chardonnay: 950 }, realDollars: 4750, nominalDollars: 4560 } // Pure Chardonnay remaining
-      },
-      {
-        containerId: "tankB",
-        stateId: "state_tankB_after_transfer",
-        qty: 850, // 800 + 50
-        unit: "gal",
-        composition: {
-          varietals: { pinot: 800, chardonnay: 50 }, // Blend: ~94.1% Pinot, ~5.9% Chardonnay
-          realDollars: 4250,  // 4000 + 250
-          nominalDollars: 4150 // 3900 + 240
-        }
-      }
-    ],
-
-    // Flow specifications with compositions
-    flows: [
-      // tankA transfer 50 gal (100% Chardonnay being transferred)
-      {
-        from: 0,
-        to: 1,
-        qty: 50,
-        unit: "gal",
-        composition: { varietals: { chardonnay: 50 }, realDollars: 250, nominalDollars: 240 }
-      },
-      {
-        from: 0,
-        to: 0,
-        qty: -50,
-        unit: "gal",
-        composition: { varietals: { chardonnay: -50 }, realDollars: -250, nominalDollars: -240 }
-      },
-      {
-        from: 1,
-        to: 1,
-        qty: 0,
-        unit: "gal",
-        composition: { }
-      }
-    ]
-  };
+  console.log("--- Running Tank Transfer Test ---");
+  const driver = getDriver();
+  const session = driver.session();
 
   try {
-    console.log("Creating transfer operation...");
-    const result = await WineryOperationService.validateAndCommitOperation(transferOp);
-    console.log("Transfer operation created successfully:", result);
+    await session.run("MATCH (n) DETACH DELETE n");
+    console.log("Cleaned database.");
+
+    const containerRepo = new ContainerRepo(session);
+    const tankA: Container = {
+      id: "tankA",
+      name: "Tank A",
+      tenantId: "winery1",
+      type: "tank",
+      capacityHUnits: 2000,
+      createdAt: new Date(),
+    };
+    const tankB: Container = {
+      id: "tankB",
+      name: "Tank B",
+      tenantId: "winery1",
+      type: "tank",
+      capacityHUnits: 2000,
+      createdAt: new Date(),
+    };
+    await containerRepo.create(tankA);
+    await containerRepo.create(tankB);
+
+    const stateRepo = new ContainerStateRepo(session);
+    const now = new Date();
+    const stateA: ContainerState = {
+      id: "state_tankA_initial",
+      tenantId: "winery1",
+      createdAt: now,
+      timestamp: now,
+      container: tankA,
+      isHead: true,
+      quantifiedComposition: {
+        qty: 1000n,
+        unit: "gal",
+        attributes: {
+          varietal: {
+            CHARD: 1000n,
+          },
+        },
+      },
+      flowsTo: [],
+      flowsFrom: [],
+    };
+
+    const stateB: ContainerState = {
+      id: "state_tankB_initial",
+      tenantId: "winery1",
+      createdAt: now,
+      timestamp: now,
+      container: tankB,
+      isHead: true,
+      quantifiedComposition: {
+        qty: 800n,
+        unit: "gal",
+        attributes: {
+          varietal: {
+            PINOT: 800n,
+          },
+        },
+      },
+      flowsTo: [],
+      flowsFrom: [],
+    };
+
+    await stateRepo.create(stateA);
+    await stateRepo.create(stateB);
+    console.log("Seeded initial states for tankA/tankB.");
+
+    const op = await WineryOperationService.buildWineryOperation({
+      id: "transfer_test_001",
+      type: "transfer",
+      description: "Transfer 50 gallons from Tank A to Tank B",
+      tenantId: "winery1",
+      createdAt: new Date(),
+      fromContainers: [stateA, stateB],
+      flowQuantities: [
+        {
+          fromStateId: stateA.id,
+          toStateId: tankB.id,
+          qty: 50n,
+        },
+      ],
+    });
+
+    console.log("Committing transfer operation...");
+    const result = await WineryOperationService.validateAndCommitOperation(op);
+    console.log("Transfer operation created successfully.");
+
+    if (result.outputStates) {
+      console.log(
+        "\nOutput states:",
+        JSON.stringify(result.outputStates, replacer, 2)
+      );
+    }
   } catch (error) {
     console.error("Transfer operation failed:", error);
+  } finally {
+    await session.close();
+    await driver.close();
+    console.log("--- Test Complete ---");
   }
 }
 

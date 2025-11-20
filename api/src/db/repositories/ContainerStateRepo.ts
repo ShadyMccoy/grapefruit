@@ -1,7 +1,12 @@
 // db/repositories/ContainerStateRepo.ts
-import { Session } from "neo4j-driver";
+import neo4j, { Session } from "neo4j-driver";
 import { ContainerState } from "../../domain/nodes/ContainerState";
 import { Container } from "../../domain/nodes/Container";
+import {
+  serializeAttributes,
+  deserializeAttributes,
+} from "../../util/attributeSerialization";
+
 
 export class ContainerStateRepo {
   constructor(private session: Session) {}
@@ -10,21 +15,22 @@ export class ContainerStateRepo {
     await this.session.run(
       `
       MATCH (c:Container {id: $containerId})
-      CREATE (s:ContainerState {
-        id: $id,
-        qty: $qty,
-        unit: $unit,
-        composition: $composition,
-        timestamp: datetime($timestamp),
-        tenantId: $tenantId,
-        createdAt: datetime($createdAt)
-      })-[:STATE_OF]->(c)
+      MERGE (s:ContainerState {id: $id})
+      ON CREATE SET
+        s.qty = $qty,
+        s.unit = $unit,
+        s.composition = $composition,
+        s.timestamp = datetime($timestamp),
+        s.tenantId = $tenantId,
+        s.createdAt = datetime($createdAt),
+        s.isHead = true
+      MERGE (s)-[:STATE_OF]->(c)
       `,
       {
         id: state.id,
-        qty: state.quantifiedComposition.qty,
+        qty: neo4j.int(state.quantifiedComposition.qty),
         unit: state.quantifiedComposition.unit,
-        composition: JSON.stringify(state.quantifiedComposition.attributes),
+        composition: serializeAttributes(state.quantifiedComposition.attributes),
         timestamp: state.timestamp.toISOString(),
         tenantId: state.tenantId,
         createdAt: state.createdAt.toISOString(),
@@ -33,32 +39,72 @@ export class ContainerStateRepo {
     );
   }
 
-  async findCurrentByContainer(containerId: string): Promise<ContainerState[]> {
+  async findById(id: string): Promise<ContainerState | null> {
+    const result = await this.session.run(
+      `
+      MATCH (s:ContainerState {id: $id})-[:STATE_OF]->(c:Container)
+      RETURN s, c
+      `,
+      { id }
+    );
+
+    if (result.records.length === 0) {
+      return null;
+    }
+
+    const record = result.records[0];
+    const s = record.get("s").properties;
+    const c = record.get("c").properties;
+
+    return {
+      id: s.id,
+      tenantId: s.tenantId,
+      createdAt: new Date(s.createdAt),
+      timestamp: new Date(s.timestamp),
+      container: { ...c, createdAt: new Date(c.createdAt) } as Container,
+      quantifiedComposition: {
+        qty: neo4j.isInt(s.qty) ? s.qty.toBigInt() : BigInt(s.qty),
+        unit: s.unit,
+        attributes: deserializeAttributes(s.composition ?? "{}"),
+      },
+      flowsTo: [],
+      flowsFrom: [],
+      isHead: s.isHead,
+    } as ContainerState;
+  }
+
+  async findCurrentByContainer(containerId: string): Promise<ContainerState | null> {
     const result = await this.session.run(
       `
       MATCH (s:ContainerState)-[:STATE_OF]->(c:Container {id: $containerId})
-      WHERE s.isCurrent = true
+      WHERE s.isHead = true
       RETURN s, c
       `,
       { containerId }
     );
 
-    return result.records.map(r => {
-      const s = r.get("s").properties;
-      const c = r.get("c").properties;
-      const comp = s.composition ? JSON.parse(s.composition) : {};
-      return {
-        id: s.id,
-        tenantId: s.tenantId,
-        createdAt: new Date(s.createdAt),
-        timestamp: new Date(s.timestamp),
-        container: { ...c, createdAt: new Date(c.createdAt) } as Container,
-        quantifiedComposition: {
-          qty: s.qty,
-          unit: s.unit,
-          attributes: comp
-        }
-      } as ContainerState;
-    });
+    if (result.records.length === 0) {
+      return null;
+    }
+
+    const record = result.records[0];
+    const s = record.get("s").properties;
+    const c = record.get("c").properties;
+
+    return {
+      id: s.id,
+      tenantId: s.tenantId,
+      createdAt: new Date(s.createdAt),
+      timestamp: new Date(s.timestamp),
+      container: { ...c, createdAt: new Date(c.createdAt) } as Container,
+      quantifiedComposition: {
+        qty: neo4j.isInt(s.qty) ? s.qty.toBigInt() : BigInt(s.qty),
+        unit: s.unit,
+        attributes: deserializeAttributes(s.composition ?? "{}"),
+      },
+      flowsTo: [],
+      flowsFrom: [],
+      isHead: s.isHead,
+    } as ContainerState;
   }
 }

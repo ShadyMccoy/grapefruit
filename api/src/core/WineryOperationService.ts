@@ -86,9 +86,11 @@ export class WineryOperationService {
       container: state.container,
       quantifiedComposition: state.quantifiedComposition,
       timestamp: params.createdAt,
+      isHead: true,
       flowsTo: [],
       flowsFrom: []
     }));
+
   }
 
   private static createFlows(
@@ -98,6 +100,7 @@ export class WineryOperationService {
     },
     toContainers: ContainerState[]
   ): void {
+    // 1. Create explicit flows
     for (const flow of params.flowQuantities) {
       const fromState = params.fromContainers.find(s => s.id === flow.fromStateId);
       const toState = toContainers.find(s => s.container.id === flow.toStateId);
@@ -112,6 +115,29 @@ export class WineryOperationService {
           }
         });
         toState.flowsFrom.push(fromState.flowsTo[fromState.flowsTo.length - 1]);
+      }
+    }
+
+    // 2. Create remainder flows (auto-balancing)
+    for (const fromState of params.fromContainers) {
+      const explicitOutQty = fromState.flowsTo.reduce((sum, f) => sum + f.properties.qty, 0n);
+      const remainder = fromState.quantifiedComposition.qty - explicitOutQty;
+      
+      if (remainder > 0n) {
+        // Find the output state corresponding to this input container
+        const toState = toContainers.find(s => s.container.id === fromState.container.id);
+        if (toState) {
+          fromState.flowsTo.push({
+            from: { id: fromState.id },
+            to: { id: toState.id },
+            properties: {
+              qty: remainder,
+              unit: fromState.quantifiedComposition.unit,
+              attributes: {}
+            }
+          });
+          toState.flowsFrom.push(fromState.flowsTo[fromState.flowsTo.length - 1]);
+        }
       }
     }
   }
@@ -153,6 +179,11 @@ export class WineryOperationService {
     },
     toContainers: ContainerState[]
   ): WineryOperation {
+    const flows: FlowToRelationship[] = [];
+    for (const state of params.fromContainers) {
+      flows.push(...state.flowsTo);
+    }
+
     return {
       id: params.id,
       tenantId: params.tenantId,
@@ -160,7 +191,8 @@ export class WineryOperationService {
       type: params.type,
       description: params.description,
       inputStates: params.fromContainers,
-      outputStates: toContainers
+      outputStates: toContainers,
+      flows,
     };
   }
 
@@ -213,7 +245,8 @@ export class WineryOperationService {
         },
         timestamp: new Date(s.timestamp),
         flowsTo: [],
-        flowsFrom: []
+        flowsFrom: [],
+        isHead: true,
       } as ContainerState;
     } finally {
       await session.close();

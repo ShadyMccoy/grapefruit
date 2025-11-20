@@ -4,6 +4,10 @@
 
 import { Session } from "neo4j-driver";
 import { WeighTag } from "../../domain/nodes/VocabNodes";
+import {
+  serializeAttributes,
+  deserializeAttributes,
+} from "../../util/attributeSerialization";
 
 export class WeighTagRepo {
   constructor(private session: Session) {}
@@ -30,7 +34,7 @@ export class WeighTagRepo {
         vintage: weighTag.vintage,
         qty: weighTag.quantifiedComposition.qty,
         unit: weighTag.quantifiedComposition.unit,
-        composition: JSON.stringify(weighTag.quantifiedComposition.attributes),
+        composition: serializeAttributes(weighTag.quantifiedComposition.attributes),
         tenantId: weighTag.tenantId,
         createdAt: weighTag.createdAt.toISOString(),
       }
@@ -60,7 +64,6 @@ export class WeighTagRepo {
     if (result.records.length === 0) return null;
     
     const w = result.records[0].get("w").properties;
-    const comp = w.composition ? JSON.parse(w.composition) : {};
     return {
       id: w.id,
       tagNumber: w.tagNumber,
@@ -69,9 +72,9 @@ export class WeighTagRepo {
       tenantId: w.tenantId,
       createdAt: new Date(w.createdAt),
       quantifiedComposition: {
-        qty: w.qty,
+        qty: BigInt(w.qty),
         unit: w.unit,
-        attributes: comp
+        attributes: deserializeAttributes(w.composition ?? "{}")
       }
     } as WeighTag;
   }
@@ -80,7 +83,6 @@ export class WeighTagRepo {
     const result = await this.session.run(`MATCH (w:WeighTag) RETURN w`);
     return result.records.map(r => {
       const w = r.get("w").properties;
-      const comp = w.composition ? JSON.parse(w.composition) : {};
       return {
         id: w.id,
         tagNumber: w.tagNumber,
@@ -89,9 +91,9 @@ export class WeighTagRepo {
         tenantId: w.tenantId,
         createdAt: new Date(w.createdAt),
         quantifiedComposition: {
-          qty: w.qty,
+          qty: BigInt(w.qty),
           unit: w.unit,
-          attributes: comp
+          attributes: deserializeAttributes(w.composition ?? "{}")
         }
       } as WeighTag;
     });

@@ -33,11 +33,13 @@ async function main() {
       weightLbs: 2500,
       vintage: 2024,
       quantifiedComposition: {
-        qty: 2500,
+        qty: 2500n,
         unit: "lbs",
-        varietals: { chardonnay: 2500 },
-        realDollars: 3750,
-        nominalDollars: 3750
+        attributes: {
+          varietals: { chardonnay: 2500n },
+          realDollars: 3750n,
+          nominalDollars: 3750n
+        }
       },
       tenantId: "winery1",
       createdAt: new Date()
@@ -49,11 +51,13 @@ async function main() {
       weightLbs: 3200,
       vintage: 2024,
       quantifiedComposition: {
-        qty: 3200,
+        qty: 3200n,
         unit: "lbs",
-        varietals: { pinot: 3200 },
-        realDollars: 4800,
-        nominalDollars: 4800
+        attributes: {
+          varietals: { pinot: 3200n },
+          realDollars: 4800n,
+          nominalDollars: 4800n
+        }
       },
       tenantId: "winery1",
       createdAt: new Date()
@@ -111,13 +115,18 @@ async function main() {
       id: "state_test_tank_1",
       container: tank1,
       quantifiedComposition: {
-        qty: 400,
+        qty: 400n,
         unit: "gal",
-        varietals: { chardonnay: 400 },
-        realDollars: 2000,
-        nominalDollars: 2000
+        attributes: {
+          varietals: { chardonnay: 400n },
+          realDollars: 2000n,
+          nominalDollars: 2000n
+        }
       },
       timestamp: new Date(),
+      isHead: true,
+      flowsTo: [],
+      flowsFrom: [],
       tenantId: "winery1",
       createdAt: new Date()
     };
@@ -126,13 +135,18 @@ async function main() {
       id: "state_test_barrel_1",
       container: barrel1,
       quantifiedComposition: {
-        qty: 50,
+        qty: 50n,
         unit: "gal",
-        varietals: { pinot: 50 },
-        realDollars: 500,
-        nominalDollars: 500
+        attributes: {
+          varietals: { pinot: 50n },
+          realDollars: 500n,
+          nominalDollars: 500n
+        }
       },
       timestamp: new Date(),
+      isHead: true,
+      flowsTo: [],
+      flowsFrom: [],
       tenantId: "winery1",
       createdAt: new Date()
     };
@@ -144,10 +158,10 @@ async function main() {
     console.log(`  ✅ Created ContainerState: ${state2.id} for ${barrel1.name} (${state2.quantifiedComposition.qty} ${state2.quantifiedComposition.unit})`);
 
     // Verify ContainerStates were created
-    const statesForTank = await stateRepo.findCurrentByContainer(tank1.id);
-    const statesForBarrel = await stateRepo.findCurrentByContainer(barrel1.id);
-    console.log(`  📊 ContainerStates for ${tank1.name}: ${statesForTank.length}`);
-    console.log(`  📊 ContainerStates for ${barrel1.name}: ${statesForBarrel.length}\n`);
+    const stateForTank = await stateRepo.findCurrentByContainer(tank1.id);
+    const stateForBarrel = await stateRepo.findCurrentByContainer(barrel1.id);
+    console.log(`  📊 ContainerState for ${tank1.name}: ${stateForTank ? stateForTank.id : 'none'}`);
+    console.log(`  📊 ContainerState for ${barrel1.name}: ${stateForBarrel ? stateForBarrel.id : 'none'}\n`);
 
     // ========================================
     // Summary
