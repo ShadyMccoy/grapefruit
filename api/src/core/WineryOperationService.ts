@@ -131,6 +131,13 @@ export class WineryOperationService {
       const incomingCompositions = toContainer.flowsFrom.map(flow => flow.properties);
       if (incomingCompositions.length > 0) {
         toContainer.quantifiedComposition = blendCompositions(incomingCompositions);
+      } else {
+        // No incoming flows; set to zero composition
+        toContainer.quantifiedComposition = {
+          qty: 0n,
+          unit: toContainer.quantifiedComposition.unit,
+          attributes: {}
+        };
       }
     }
   }
