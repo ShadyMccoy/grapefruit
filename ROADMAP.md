@@ -27,6 +27,9 @@ Focus:
 - Validate lineage and immutability
 - Refine invariants before full enforcement
 
+- test scaling: 100, 1000, 10000 or even 1 million operations
+- performance profiling and optimization
+
 ---
 
 ## 🔜 Next Phases
@@ -36,13 +39,13 @@ Focus:
 - Type-safe repository interfaces  
 - Invariant enforcement on mutation  
 
-### **Phase 3 — Audit & Snapshot Engine**
-- Time-travel queries (reconstruct state at any timestamp)  
-- Export utilities for compliance  
-
-### **Phase 4 — Frontend Visualization**
+### **Phase 5 — Frontend Visualization**
 - React-based lineage maps and Sankey diagrams  
 - Operation tracing and state diff visualization  
+
+### **Phase 4 — Audit & Snapshot Engine**
+- Time-travel queries (reconstruct state at any timestamp)  
+- Export utilities for compliance  
 
 ### **Phase 5 — ERP Integration**
 - Connect to Dynamics 365 / Business Central  

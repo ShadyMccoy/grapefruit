@@ -9,49 +9,79 @@ export interface StarterData {
   operations: WineryOperation[];
 }
 
+const containers: Container[] = [];
+const containerStates: ContainerState[] = [];
+const operations: WineryOperation[] = [];
+
+const TENANT_ID = "winery1";
+const ZERO_TIME = new Date("2024-01-01T00:00:00Z");
+
+// Generate 10 Tanks
+for (let i = 1; i <= 10; i++) {
+  containers.push({
+    id: `tank-${i}`,
+    name: `Tank ${i}`,
+    type: "tank",
+    capacityHUnits: 100000000n, // 10,000 gal
+    tenantId: TENANT_ID,
+    createdAt: ZERO_TIME
+  });
+}
+
+// Generate 40 Barrels
+for (let i = 1; i <= 40; i++) {
+  containers.push({
+    id: `barrel-${i}`,
+    name: `Barrel ${i}`,
+    type: "barrel",
+    capacityHUnits: 600000n, // 60 gal
+    tenantId: TENANT_ID,
+    createdAt: ZERO_TIME
+  });
+}
+
+// Add Loss Container
+containers.push({
+    id: "loss-1",
+    name: "Loss Container",
+    type: "loss",
+    tenantId: TENANT_ID,
+    createdAt: ZERO_TIME
+});
+
+// Initial States for first 5 tanks
+const varietals = ["Cabernet", "Merlot", "Pinot Noir", "Chardonnay", "Zinfandel"];
+for (let i = 0; i < 5; i++) {
+  const tankId = `tank-${i+1}`;
+  const varietal = varietals[i];
+  const qty = 50000000n; // 5,000 gal
+  
+  const container = containers.find(c => c.id === tankId)!;
+
+  containerStates.push({
+    id: `state-${tankId}-initial`,
+    container: container,
+    quantifiedComposition: {
+      qty,
+      unit: "gal",
+      attributes: {
+        varietal: { [varietal]: qty },
+        cost: {
+            real: qty * 5n, // $5/gal
+            nominal: qty * 5n
+        }
+      }
+    },
+    flowsTo: [],
+    flowsFrom: [],
+    timestamp: ZERO_TIME,
+    tenantId: TENANT_ID,
+    createdAt: ZERO_TIME
+  });
+}
+
 export const starterData: StarterData = {
-  containers: [
-    { id: "tankA", name: "Tank A", type: "tank", capacityHUnits: 2641720, tenantId: "winery1", createdAt: new Date() },
-    { id: "tankB", name: "Tank B", type: "tank", capacityHUnits: 2113376, tenantId: "winery1", createdAt: new Date() },
-    { id: "barrelA", name: "Barrel A", type: "barrel", capacityHUnits: 594156, tenantId: "winery1", createdAt: new Date() },
-    { id: "barrelB", name: "Barrel B", type: "barrel", capacityHUnits: 594156, tenantId: "winery1", createdAt: new Date() },
-    { id: "loss1", name: "Loss Container", type: "loss", tenantId: "winery1", createdAt: new Date() },
-  ],
-  containerStates: [
-    {
-      id: "state_tankA_initial",
-      container: { id: "tankA", name: "Tank A", type: "tank", capacityHUnits: 2641720, tenantId: "winery1", createdAt: new Date() },
-      quantifiedComposition: { qty: 1000n, unit: "gal", attributes: { varietals: { chardonnay: 1000n }, realDollars: 5000n, nominalDollars: 4800n } },
-      flowsTo: [],
-      flowsFrom: [],
-      timestamp: new Date(),
-      tenantId: "winery1",
-      createdAt: new Date(),
-    },
-    {
-      id: "state_tankB_initial",
-      container: { id: "tankB", name: "Tank B", type: "tank", capacityHUnits: 2113376, tenantId: "winery1", createdAt: new Date() },
-      quantifiedComposition: { qty: 800n, unit: "gal", attributes: { varietals: { pinot: 800n }, realDollars: 4000n, nominalDollars: 3900n } },
-      timestamp: new Date(),
-      tenantId: "winery1",
-      createdAt: new Date(),
-      flowsTo: [],
-      flowsFrom: [],
-    },
-  ],
-  operations: [
-    {
-      id: "op_blend_1",
-      type: "blend",
-      description: "Blend Chardonnay and Pinot",
-      tenantId: "winery1",
-      createdAt: new Date(),
-      inputStateIds: ["state_tankA_initial", "state_tankB_initial"],
-      flows: [
-        { from: {id: "state_tankA_initial"}, to: {id: "output0"}, properties: { qty: 1000n, unit: "gal", attributes: { varietals: { chardonnay: 1000n }, realDollars: 5000n, nominalDollars: 4800n } } }, // 1000 gal from tankA to output 0
-        { from: {id: "state_tankB_initial"}, to: {id: "output0"}, properties: { qty: 800n, unit: "gal", attributes: { varietals: { pinot: 800n }, realDollars: 4000n, nominalDollars: 3900n } } }  // 800 gal from tankB to output 0
-      ],
-      outputContainerId: "tankA", // Result goes to tankA
-    },
-  ],
+  containers,
+  containerStates,
+  operations
 };

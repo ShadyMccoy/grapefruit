@@ -111,7 +111,7 @@ Winemaking often involves discrepancies between expected and actual quantities d
 - Loss container: Virtual container with type 'loss'
 - Negative flows: For gains (wine found)
 - Positive flows: For losses (wine evaporated)
-- Real dollars adjust with physical changes; nominal dollars conserved
+- Real dollars and nominal dollars are conserved (redistributed) during operational losses.
 
 ---
 

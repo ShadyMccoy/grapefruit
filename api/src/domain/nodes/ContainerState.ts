@@ -7,7 +7,6 @@ export interface ContainerState extends BaseNode {
   container: Container;
   quantifiedComposition: QuantifiedComposition;
   timestamp: Date;
-  isHead: boolean;
   flowsTo: FlowToRelationship[];
   flowsFrom: FlowToRelationship[];
 }

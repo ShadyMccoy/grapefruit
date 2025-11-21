@@ -8,6 +8,14 @@ type Attributes = {
 };
 
 /**
+ * Attribute Classification:
+ * - Physical Attributes: Directly tied to the physical substance (e.g., 'varietal').
+ *   These are distributed first and determine the actual quantity of the flow.
+ * - Abstract Attributes: Properties that follow the physical substance but don't define it (e.g., 'cost', 'dollars').
+ *   These are distributed based on the ratios established by the physical distribution.
+ */
+
+/**
  * Distributes a single integer value using the Largest Remainder Method for fairness
  * while maintaining determinism.
  * @private
@@ -59,16 +67,38 @@ function _distributeSingleAttribute(
 }
 
 /**
- * Distributes composition attributes across multiple flows using the "Physical First, Abstract Follows" model.
- * Ensures conservation: sum of flow attributes equals total attributes.
- *
- * Phase 1: Distribute physical attributes (varietals) to determine true flow quantities.
- * Phase 2: Distribute abstract attributes (cost) based on the true quantities.
+ * Configuration for how attributes should be distributed.
+ * - 'physical': Follows the physical volume exactly (e.g., varietal).
+ * - 'cost': Follows physical volume for standard containers, but skips loss/gain (conserved).
+ * - 'value': Follows physical volume for standard/gain, but skips loss (conserved).
+ */
+export type AttributeCategory = 'physical' | 'cost' | 'value';
+
+export const ATTRIBUTE_CATEGORIES: Record<string, AttributeCategory> = {
+  'varietal': 'physical',
+  'realDollars': 'cost',
+  'nominalDollars': 'value'
+};
+
+export interface FlowDistributionConfig {
+  qty: bigint;
+  // Defines which attribute categories this flow accepts.
+  // e.g., Loss container: { physical: true, financial: false }
+  accepts: Record<AttributeCategory, boolean>;
+}
+
+/**
+ * Distributes composition attributes across multiple flows using a category-based weighting model.
+ * 
+ * - Physical Attributes: Distributed based on flow quantity.
+ * - Financial Attributes: Distributed based on flow quantity, but masked by the 'financial' acceptance flag.
  */
 export function distributeComposition(
   fromComposition: QuantifiedComposition,
-  flowRatioQtys: bigint[],
+  flows: FlowDistributionConfig[],
 ): QuantifiedComposition[] {
+  const flowRatioQtys = flows.map(f => f.qty);
+
   // --- Phase 1: Distribute Physical Attributes (varietals) ---
   const flowVarietals: Record<string, bigint>[] = flowRatioQtys.map(() => ({}));
   const sourceVarietals = (fromComposition.attributes.varietal ?? {}) as Record<
@@ -90,7 +120,7 @@ export function distributeComposition(
     attrIndex++;
     
     distributedVarietal.forEach((amount, i) => {
-      if (amount > 0n) {
+      if (amount !== 0n) {
         flowVarietals[i][varietalName] = amount;
       }
     });
@@ -109,9 +139,8 @@ export function distributeComposition(
     }),
   );
 
-  // --- Phase 2: Distribute Abstract Attributes (cost, etc.) ---
-  const abstractRatioQtys = finalFlowQtys;
-
+  // --- Phase 2: Distribute Other Attributes ---
+  
   for (const [attrType, attrDict] of Object.entries(
     fromComposition.attributes,
   )) {
@@ -119,26 +148,51 @@ export function distributeComposition(
       continue; // Already handled
     }
 
-    flowCompositions.forEach(comp => {
-      if (!comp.attributes[attrType]) {
-        comp.attributes[attrType] = {};
-      }
-    });
+    // Determine the category for this attribute (default to physical if unknown)
+    const category = ATTRIBUTE_CATEGORIES[attrType] || 'physical';
 
-    for (const [attrName, totalAttrQty] of Object.entries(
-      attrDict as Record<string, bigint>,
-    )) {
-      const distributedAttr = _distributeSingleAttribute(
-        totalAttrQty,
-        abstractRatioQtys,
-      );
-      distributedAttr.forEach((amount, i) => {
-        if (amount > 0n) {
-          (flowCompositions[i].attributes[attrType] as Record<string, bigint>)[
-            attrName
-          ] = amount;
+    // Calculate effective weights based on the flow's acceptance of this category
+    // If a flow doesn't accept this category, its weight is 0.
+    const ratioQtys = flows.map((f, i) => 
+      f.accepts[category] ? finalFlowQtys[i] : 0n
+    );
+
+    // Handle scalar attributes (like nominalDollars often is) or nested objects
+    if (typeof attrDict === 'bigint') {
+        // Scalar attribute
+        const distributedAttr = _distributeSingleAttribute(
+            attrDict,
+            ratioQtys
+        );
+        distributedAttr.forEach((amount, i) => {
+            if (amount !== 0n) {
+                flowCompositions[i].attributes[attrType] = amount;
+            }
+        });
+    } else {
+        // Nested object attribute (like cost breakdown)
+        // Initialize container object for nested attributes
+        flowCompositions.forEach(comp => {
+          if (!comp.attributes[attrType]) {
+            comp.attributes[attrType] = {};
+          }
+        });
+
+        for (const [attrName, totalAttrQty] of Object.entries(
+          attrDict as Record<string, bigint>,
+        )) {
+          const distributedAttr = _distributeSingleAttribute(
+            totalAttrQty,
+            ratioQtys,
+          );
+          distributedAttr.forEach((amount, i) => {
+            if (amount !== 0n) {
+              (flowCompositions[i].attributes[attrType] as Record<string, bigint>)[
+                attrName
+              ] = amount;
+            }
+          });
         }
-      });
     }
   }
 
@@ -184,25 +238,64 @@ export function blendCompositions(
   return result;
 }
 
-function _recursiveEqual(a: Attributes, b: Attributes): boolean {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-
-    if (aKeys.length !== bKeys.length) return false;
-
-    for (const key of aKeys) {
-        const aValue = a[key];
-        const bValue = b[key];
-
-        if (typeof aValue === 'bigint' && typeof bValue === 'bigint') {
-            if (aValue !== bValue) return false;
-        } else if (typeof aValue === 'object' && aValue !== null && typeof bValue === 'object' && bValue !== null) {
-            if (!_recursiveEqual(aValue as Attributes, bValue as Attributes)) return false;
-        } else {
-            return false; // Type mismatch
-        }
+function _isEmptyOrZero(attr: Attributes): boolean {
+  for (const value of Object.values(attr)) {
+    if (typeof value === 'bigint') {
+      if (value !== 0n) return false;
+    } else if (typeof value === 'object' && value !== null) {
+      if (!_isEmptyOrZero(value as Attributes)) return false;
     }
-    return true;
+  }
+  return true;
+}
+
+function _recursiveEqual(a: Attributes, b: Attributes): boolean {
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+
+  for (const key of allKeys) {
+    const aValue = a[key];
+    const bValue = b[key];
+
+    // Case 1: Both are BigInts
+    if (typeof aValue === 'bigint' && typeof bValue === 'bigint') {
+      if (aValue !== bValue) return false;
+    }
+    // Case 2: One is BigInt, other is missing (undefined)
+    else if (typeof aValue === 'bigint' && bValue === undefined) {
+      if (aValue !== 0n) return false;
+    } else if (aValue === undefined && typeof bValue === 'bigint') {
+      if (bValue !== 0n) return false;
+    }
+    // Case 3: Both are Objects
+    else if (
+      typeof aValue === 'object' &&
+      aValue !== null &&
+      typeof bValue === 'object' &&
+      bValue !== null
+    ) {
+      if (!_recursiveEqual(aValue as Attributes, bValue as Attributes))
+        return false;
+    }
+    // Case 4: One is Object, other is missing
+    else if (
+      typeof aValue === 'object' &&
+      aValue !== null &&
+      bValue === undefined
+    ) {
+      if (!_isEmptyOrZero(aValue as Attributes)) return false;
+    } else if (
+      aValue === undefined &&
+      typeof bValue === 'object' &&
+      bValue !== null
+    ) {
+      if (!_isEmptyOrZero(bValue as Attributes)) return false;
+    }
+    // Case 5: Type mismatch (e.g. BigInt vs Object)
+    else {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**

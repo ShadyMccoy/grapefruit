@@ -1,40 +1,58 @@
 // src/scripts/testCypher.ts
-import { getDriver } from "../db/client";
+import { TestHelper } from "../test-utils/TestHelper";
+import { v4 as uuidv4 } from "uuid";
 
-async function testCypher(description: string, cypher: string, params: any = {}) {
-  const driver = getDriver();
-  const session = driver.session();
+TestHelper.runTest("Cypher Query Test", async (session) => {
+  const tankAId = "tankA";
+  const tankBId = "tankB";
+  const stateAId = uuidv4();
+  const stateBId = uuidv4();
 
-  try {
-    console.log(`\n🧪 Testing: ${description}`);
-    console.log(`Cypher: ${cypher.trim().split('\n')[0]}...`);
+  // 1. Setup: Create two tanks and their initial states
+  // We need to ensure they have 'composition' property as the query expects it
+  // In our real app, it's 'quantifiedComposition' serialized, but this test uses raw Cypher
+  // so we'll stick to what the query expects or update the query to match the schema.
+  // The query uses `composition: tankBState.composition`.
+  // Let's assume we want to test the logic with a simple string or JSON string for composition.
+  
+  await session.run(
+    `
+    CREATE (a:Container {id: $tankAId, name: 'Tank A'})
+    CREATE (b:Container {id: $tankBId, name: 'Tank B'})
+    CREATE (sa:ContainerState {
+      id: $stateAId, 
+      qty: 1000, 
+      unit: 'gal',
+      composition: '{"A": 100}',
+      timestamp: datetime(),
+      tenantId: 'winery1',
+      createdAt: datetime()
+    })
+    CREATE (sb:ContainerState {
+      id: $stateBId, 
+      qty: 500, 
+      unit: 'gal',
+      composition: '{"B": 100}',
+      timestamp: datetime(),
+      tenantId: 'winery1',
+      createdAt: datetime()
+    })
+    CREATE (sa)-[:STATE_OF]->(a)
+    CREATE (sb)-[:STATE_OF]->(b)
+    // Note: The query matches (s)-[:STATE_OF]->(c) AND checks for no outgoing flow
+    // It doesn't explicitly check for CURRENT_STATE relationship in the MATCH clause shown in the original file,
+    // but it does check WHERE NOT (s)-[:FLOW_TO]->()
+    `,
+    { tankAId, tankBId, stateAId, stateBId }
+  );
 
-    const result = await session.run(cypher, params);
+  console.log("Setup complete.");
 
-    console.log(`✅ Success: ${result.records.length} records returned`);
+  const operationId = "transfer_test_1";
 
-    if (result.records.length > 0 && result.records[0].keys.length > 0) {
-      const firstRecord = result.records[0];
-      firstRecord.keys.forEach(key => {
-        console.log(`   ${String(key)}: ${JSON.stringify(firstRecord.get(key))}`);
-      });
-    }
-
-    return result;
-  } catch (error) {
-    console.log(`❌ Failed: ${error}`);
-    throw error;
-  } finally {
-    await session.close();
-  }
-}
-
-async function main() {
-  try {
-    // Test: Transfer 50 gallons from Tank B to Tank A
-    await testCypher(
-      "Transfer 50 gallons from Tank B to Tank A",
-      `
+  // 2. Execute Transfer Logic (The original Cypher query)
+  const result = await session.run(
+    `
       // Create the transfer operation
       CREATE (op:WineryOperation {
         id: $operationId,
@@ -106,20 +124,30 @@ async function main() {
       }]->(tankAOutput)
 
       RETURN id(op) AS opId
-      `,
-      {
-        operationId: "transfer_test_1"
-      }
-    );
+    `,
+    { operationId }
+  );
 
-    console.log("\n🎉 All Cypher tests completed!");
+  console.log(`✅ Success: ${result.records.length} records returned`);
+  
+  // 3. Verify
+  const verifyResult = await session.run(
+    `
+    MATCH (tankA:Container {id: 'tankA'})<-[:STATE_OF]-(sa:ContainerState)
+    WHERE NOT (sa)-[:FLOW_TO]->()
+    MATCH (tankB:Container {id: 'tankB'})<-[:STATE_OF]-(sb:ContainerState)
+    WHERE NOT (sb)-[:FLOW_TO]->()
+    RETURN sa.qty as qtyA, sb.qty as qtyB
+    `
+  );
 
-  } catch (error) {
-    console.error("Test suite failed:", error);
-    process.exit(1);
-  } finally {
-    await getDriver().close();
+  const qtyA = verifyResult.records[0].get("qtyA").toNumber();
+  const qtyB = verifyResult.records[0].get("qtyB").toNumber();
+
+  console.log(`Tank A Qty: ${qtyA} (Expected 1050)`);
+  console.log(`Tank B Qty: ${qtyB} (Expected 450)`);
+
+  if (qtyA !== 1050 || qtyB !== 450) {
+    throw new Error("Cypher logic failed verification.");
   }
-}
-
-main();
+});

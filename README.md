@@ -21,6 +21,7 @@ Every grape is tracked from reception to bottle, ensuring that winemakers can de
 5. **Composability** — Complex operations built from smaller primitives.  
 6. **Separation of Concerns** — Truth layer, workflow layer, and integration layer remain independent.  
 7. **Quantized Precision** — Work in integer h-units (1 h-unit ≈ 1/10,000 gallon or pound) to eliminate floating-point drift while capturing meaningful physical units.
+8. **Fragility (Fail-Fast)** — The system assumes strict correctness of inputs and state. It does not attempt to "heal" or "guess" when encountering inconsistent data (e.g., duplicate operations, broken lineage). Instead, it fails immediately and loudly. This ensures that bugs in the logic or data corruption are surfaced instantly during development and testing, rather than being masked by defensive coding.
 
 ---
 
@@ -31,6 +32,10 @@ Every grape is tracked from reception to bottle, ensuring that winemakers can de
 - **API:** Express REST endpoints  
 - **Containerization:** Docker + docker-compose  
 - **Frontend (planned):** React for lineage visualization, interactive Sankey/aging diagrams, and heat maps.
+
+### 🚀 Performance & Monitoring
+- **PerformanceMonitor**: Built-in instrumentation tracks execution time across Code, DB (Cypher), and Network layers.
+- **Optimized Lineage**: Deep lineage queries use linear-time edge deduplication (server-side) rather than exponential path enumeration, enabling rapid traversal of complex history (e.g., Depth 20 in <300ms).
 
 > For setup instructions, see [**SETUP.md**](SETUP.md)
 

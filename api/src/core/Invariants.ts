@@ -7,11 +7,14 @@ import { WineryOperation } from "../domain/nodes/WineryOperation";
 import { FlowToRelationship } from "../domain/relationships/Flow_to";
 import { ValidationResult } from "./ValidationResult";
 import { getDriver } from "../db/client";
+import { blendCompositions, compositionsEqual } from "./CompositionHelpers";
 
 export class Invariants {
-  // Intent: Validate that a container has exactly one current state
-  // Reasoning: Multiple current states would create ambiguity in the timeline
-  static async assertSingleCurrentState(containerId: string): Promise<ValidationResult> {
+  // Intent: Validate that multiple containers have exactly one current state each
+  // Reasoning: Batch optimization for assertSingleCurrentState
+  static async assertSingleCurrentStateBatch(containerIds: string[]): Promise<ValidationResult[]> {
+    if (!containerIds || containerIds.length === 0) return [];
+
     const driver = getDriver();
     const session = driver.session();
 
@@ -19,23 +22,29 @@ export class Invariants {
       const result = await session.executeRead(async (tx) => {
         return await tx.run(
           `
-          MATCH (c:Container {id: $containerId})-[:CURRENT_STATE]->(s:ContainerState)
-          RETURN count(s) AS currentCount
+          UNWIND $containerIds AS containerId
+          MATCH (c:Container {id: containerId})
+          OPTIONAL MATCH (c)-[:CURRENT_STATE]->(s:ContainerState)
+          WITH containerId, count(s) AS currentCount
+          WHERE currentCount > 1
+          RETURN containerId, currentCount
           `,
-          { containerId }
+          { containerIds }
         );
       });
 
-      const count = result.records[0].get("currentCount").toNumber();
-      if (count > 1) {
-        return {
+      const failures: ValidationResult[] = [];
+      result.records.forEach(record => {
+        const id = record.get("containerId");
+        const count = record.get("currentCount").toNumber();
+        failures.push({
           ok: false,
           code: "MULTIPLE_CURRENT_STATES",
-          message: `Container ${containerId} has ${count} current states (expected 1).`,
-        };
-      }
+          message: `Container ${id} has ${count} current states (expected 1).`
+        });
+      });
 
-      return { ok: true };
+      return failures;
     } finally {
       await session.close();
     }
@@ -84,20 +93,30 @@ export class Invariants {
   // Intent: Validate quantity conservation using delta-based flow model
   // Reasoning: Net flows from each input must sum to zero (what goes out must come back in)
   static assertQuantityConservation(operation: WineryOperation): ValidationResult {
-    if (!operation.flows || !operation.inputStates) {
+    if (!operation.flows || !operation.inputStates || !operation.outputStates) {
       return { ok: true }; // No flows to validate
     }
 
     // Group flows by input state ID
     const flowsByInput = new Map<string, FlowToRelationship[]>();
+    // Group flows by output state ID
+    const flowsByOutput = new Map<string, FlowToRelationship[]>();
+
     for (const flow of operation.flows) {
+      // By Input
       if (!flowsByInput.has(flow.from.id)) {
         flowsByInput.set(flow.from.id, []);
       }
       flowsByInput.get(flow.from.id)!.push(flow);
+
+      // By Output
+      if (!flowsByOutput.has(flow.to.id)) {
+        flowsByOutput.set(flow.to.id, []);
+      }
+      flowsByOutput.get(flow.to.id)!.push(flow);
     }
 
-    // Validate each input's net flow is zero
+    // 1. Validate Input Conservation: State Qty = Sum(Out Flows)
     for (const inputState of operation.inputStates) {
       const flowsFromInput = flowsByInput.get(inputState.id) || [];
       const netQty = flowsFromInput.reduce((sum, flow) => sum + flow.properties.qty, 0n);
@@ -109,13 +128,42 @@ export class Invariants {
           message: `Total flow from input ${inputState.id} (${netQty}) does not match its quantity (${inputState.quantifiedComposition.qty}).`,
         };
       }
+      
+      // Validate positive flows - RELAXED for Inventory Adjustments (Gain/Loss)
+      // Negative flows are allowed to model pre-gain (expansion) and post-loss (contraction)
+      // within a single transaction.
+      /*
+      for (const flow of flowsFromInput) {
+        if (flow.properties.qty < 0n) {
+          return {
+            ok: false,
+            code: "NEGATIVE_FLOW",
+            message: `Flow from ${flow.from.id} has negative quantity (${flow.properties.qty}). All flows must be positive.`,
+          };
+        }
+      }
+      */
+    }
+
+    // 2. Validate Output Conservation: Sum(In Flows) = State Qty
+    for (const outputState of operation.outputStates) {
+      const flowsToOutput = flowsByOutput.get(outputState.id) || [];
+      const netQty = flowsToOutput.reduce((sum, flow) => sum + flow.properties.qty, 0n);
+
+      if (netQty !== outputState.quantifiedComposition.qty) {
+        return {
+          ok: false,
+          code: "QUANTITY_NOT_CONSERVED",
+          message: `Total flow to output ${outputState.id} (${netQty}) does not match its quantity (${outputState.quantifiedComposition.qty}).`,
+        };
+      }
     }
 
     return { ok: true };
   }
 
   // Intent: Validate composition conservation (varietals, real/nominal dollars)
-  // Reasoning: Composition deltas must net to zero for each input state
+  // Reasoning: The sum of compositions of all outgoing flows from an input state must exactly match the input state's composition.
   static assertCompositionConservation(operation: WineryOperation): ValidationResult {
     if (!operation.flows || !operation.inputStates) {
       return { ok: true };
@@ -134,20 +182,18 @@ export class Invariants {
     for (const inputState of operation.inputStates) {
       const flowsFromInput = flowsByInput.get(inputState.id) || [];
       
-      if (flowsFromInput.length === 0) continue; // No flows means no change
+      if (flowsFromInput.length === 0) continue; 
 
-      // Sum all composition deltas
-      const netComposition = flowsFromInput.reduce(
-        (sum, flow) => this.addCompositions(sum, flow.properties),
-        {} as Partial<QuantifiedComposition>
-      );
+      // Sum all outgoing flow compositions
+      const flowCompositions = flowsFromInput.map(f => f.properties);
+      const totalFlowComposition = blendCompositions(flowCompositions);
 
-      // Net composition must be zero
-      if (!this.isZeroComposition(netComposition)) {
+      // Compare with input composition
+      if (!compositionsEqual(inputState.quantifiedComposition, totalFlowComposition)) {
         return {
           ok: false,
           code: "COMPOSITION_NOT_CONSERVED",
-          message: `Composition deltas don't net to zero for input ${inputState.id}.`,
+          message: `Sum of flow compositions from input ${inputState.id} does not match input composition.`,
         };
       }
     }
@@ -156,27 +202,33 @@ export class Invariants {
   }
 
   // Intent: Validate nominal dollar conservation across entire operation
-  // Reasoning: Nominal dollars must ALWAYS balance, unlike real dollars which can flow to loss
+  // Reasoning: Nominal dollars must ALWAYS balance. Sum of inputs must equal sum of outputs.
   static assertNominalDollarConservation(operation: WineryOperation): ValidationResult {
     if (!operation.inputStates || !operation.outputStates) {
       return { ok: true };
     }
 
-    // Check that all flows have consistent nominal dollar handling
-    if (operation.flows) {
-      const totalNominalFlow = operation.flows.reduce(
-        (sum, flow) => sum + ((flow.properties.attributes?.["nominalDollars"] as bigint) || 0n),
-        0n
-      );
+    const getNominalDollars = (comp: QuantifiedComposition): bigint => {
+      const val = comp.attributes["nominalDollars"];
+      return typeof val === 'bigint' ? val : 0n;
+    };
 
-      // In delta model, total should be zero
-      if (totalNominalFlow !== 0n) {
-        return {
-          ok: false,
-          code: "NOMINAL_DOLLARS_NOT_CONSERVED",
-          message: `Total nominal dollar flow is ${totalNominalFlow} (expected 0).`,
-        };
-      }
+    const totalInputNominal = operation.inputStates.reduce(
+      (sum, state) => sum + getNominalDollars(state.quantifiedComposition),
+      0n
+    );
+
+    const totalOutputNominal = operation.outputStates.reduce(
+      (sum, state) => sum + getNominalDollars(state.quantifiedComposition),
+      0n
+    );
+
+    if (totalInputNominal !== totalOutputNominal) {
+      return {
+        ok: false,
+        code: "NOMINAL_DOLLARS_NOT_CONSERVED",
+        message: `Total nominal dollars in (${totalInputNominal}) does not match total out (${totalOutputNominal}).`,
+      };
     }
 
     return { ok: true };
@@ -220,72 +272,27 @@ export class Invariants {
 
     // Synchronous validations (no DB access needed)
     results.push(this.assertQuantityConservation(operation));
+    results.push(this.assertCompositionConservation(operation));
     results.push(this.assertNominalDollarConservation(operation));
     results.push(this.assertValidFlowIndices(operation));
 
     // Asynchronous validations (require DB access)
+    // NOTE: These are now handled inside the write transaction for performance/atomicity.
+    // Keeping them here for reference or if we need "dry run" validation.
+    /*
     if (operation.inputStates) {
       results.push(await this.assertInputStatesAreCurrent(operation.inputStates.map(s => s.id)));
     }
 
-    if (operation.outputStates) {
-      for (const outputState of operation.outputStates) {
-        results.push(await this.assertSingleCurrentState(outputState.container.id));
-      }
+    if (operation.outputStates && operation.outputStates.length > 0) {
+      const containerIds = operation.outputStates.map(s => s.container.id);
+      const batchFailures = await this.assertSingleCurrentStateBatch(containerIds);
+      results.push(...batchFailures);
     }
+    */
 
     // Return only failures
     return results.filter(r => !r.ok);
   }
-
-  // Helper: Check if composition is effectively zero
-  private static isZeroComposition(composition: Partial<QuantifiedComposition>): boolean {
-    if (composition.attributes) {
-      for (const value of Object.values(composition.attributes)) {
-        if (typeof value === 'bigint') {
-          if (value !== 0n) return false;
-        } else if (typeof value === 'object') {
-          for (const subValue of Object.values(value)) {
-            if (subValue !== 0n) return false;
-          }
-        }
-      }
-    }
-
-    return true;
-  }
-
-  // Helper: Add two compositions together
-  private static addCompositions(a: Partial<QuantifiedComposition>, b: Partial<QuantifiedComposition>): Partial<QuantifiedComposition> {
-    const result: Partial<QuantifiedComposition> = {};
-
-    // Add attributes generically
-    if (a.attributes || b.attributes) {
-      result.attributes = { ...a.attributes };
-      if (b.attributes) {
-        for (const [key, value] of Object.entries(b.attributes)) {
-          if (typeof value === 'bigint') {
-            if (result.attributes[key] === undefined) {
-              result.attributes[key] = value;
-            } else if (typeof result.attributes[key] === 'bigint') {
-              (result.attributes[key] as bigint) += value;
-            } else {
-              // mismatch, perhaps error or skip
-            }
-          } else if (typeof value === 'object') {
-            if (!result.attributes[key] || typeof result.attributes[key] !== 'object') {
-              result.attributes[key] = { ...value };
-            } else {
-              const existing = result.attributes[key] as Record<string, bigint>;
-              for (const [subKey, subValue] of Object.entries(value)) {
-                existing[subKey] = (existing[subKey] || 0n) + subValue;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    return result;
-  }
 }
+

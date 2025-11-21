@@ -4,6 +4,13 @@ The core layer implements Grapefruit's business rules and mathematical integrity
 
 This layer sits between the domain (abstract models, see [domain/README.md](../domain/README.md)) and DB (persistence, see [db/README.md](../db/README.md)), turning business concepts into concrete numerical representations.
 
+## ⚠️ Design Principle: Fragility & Strictness
+
+The Core layer is designed to be **fragile**. It assumes that the upstream data and logic are correct.
+- **No Auto-Correction**: If an invariant is violated (e.g., mass balance off by 1 unit), the operation **fails**. It does not attempt to round or fuzz the numbers.
+- **No Defensive Reads**: It assumes the database state is valid (e.g., a container has exactly one current state). If the DB returns multiple "current" states, the system throws an error rather than picking one arbitrarily.
+- **Fail Fast**: The goal is to surface bugs immediately during testing (via `scripts/`) rather than masking them with "robust" error handling that leads to silent data corruption.
+
 ---
 
 ## 🔒 Invariants

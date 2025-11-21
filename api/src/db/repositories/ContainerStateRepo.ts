@@ -22,9 +22,12 @@ export class ContainerStateRepo {
         s.composition = $composition,
         s.timestamp = datetime($timestamp),
         s.tenantId = $tenantId,
-        s.createdAt = datetime($createdAt),
-        s.isHead = true
+        s.createdAt = datetime($createdAt)
       MERGE (s)-[:STATE_OF]->(c)
+      WITH c, s
+      OPTIONAL MATCH (c)-[r:CURRENT_STATE]->(old)
+      DELETE r
+      CREATE (c)-[:CURRENT_STATE]->(s)
       `,
       {
         id: state.id,
@@ -69,15 +72,13 @@ export class ContainerStateRepo {
       },
       flowsTo: [],
       flowsFrom: [],
-      isHead: s.isHead,
     } as ContainerState;
   }
 
   async findCurrentByContainer(containerId: string): Promise<ContainerState | null> {
     const result = await this.session.run(
       `
-      MATCH (s:ContainerState)-[:STATE_OF]->(c:Container {id: $containerId})
-      WHERE s.isHead = true
+      MATCH (c:Container {id: $containerId})-[:CURRENT_STATE]->(s:ContainerState)
       RETURN s, c
       `,
       { containerId }
@@ -104,7 +105,6 @@ export class ContainerStateRepo {
       },
       flowsTo: [],
       flowsFrom: [],
-      isHead: s.isHead,
     } as ContainerState;
   }
 }

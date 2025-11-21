@@ -3,165 +3,117 @@
 
 import { Invariants } from "../core/Invariants";
 import { WineryOperation } from "../domain/nodes/WineryOperation";
-import { getDriver } from "../db/client";
+import { ContainerState } from "../domain/nodes/ContainerState";
+import { FlowToRelationship } from "../domain/relationships/Flow_to";
+import { TestHelper } from "../test-utils/TestHelper";
 
-async function testInvariants() {
-  console.log("=== Testing Invariants ===\n");
-
-  // Test 1: Valid transfer operation (should pass)
-  console.log("Test 1: Valid transfer operation");
-  const validOp: WineryOperation = {
-    id: "test_valid_transfer",
-    type: "transfer",
-    tenantId: "winery1",
-    createdAt: new Date(),
-    inputStateIds: ["state1", "state2"],
-    outputSpecs: [
-      {
-        containerId: "tankA",
-        stateId: "state_out_1",
-        qty: 950,
-        unit: "gal",
-        composition: { realDollars: 4750, nominalDollars: 4800 }
-      },
-      {
-        containerId: "tankB",
-        stateId: "state_out_2",
-        qty: 850,
-        unit: "gal",
-        composition: { realDollars: 4250, nominalDollars: 4200 }
-      }
-    ],
-    flows: [
-      // Valid delta flows: net zero for each input
-      { from: 0, to: 1, qty: 50, unit: "gal", composition: { realDollars: 250, nominalDollars: 240 } },
-      { from: 0, to: 0, qty: -50, unit: "gal", composition: { realDollars: -250, nominalDollars: -240 } },
-      { from: 1, to: 1, qty: 0, unit: "gal", composition: { realDollars: 0, nominalDollars: 0 } }
-    ]
-  };
-
-  let result = Invariants.assertQuantityConservation(validOp);
-  console.log(`  Quantity conservation: ${result.ok ? "✓ PASS" : "✗ FAIL - " + result.message}`);
-
-  result = Invariants.assertCompositionConservation(validOp);
-  console.log(`  Composition conservation: ${result.ok ? "✓ PASS" : "✗ FAIL - " + result.message}`);
-
-  result = Invariants.assertNominalDollarConservation(validOp);
-  console.log(`  Nominal dollar conservation: ${result.ok ? "✓ PASS" : "✗ FAIL - " + result.message}`);
-
-  result = Invariants.assertValidFlowIndices(validOp);
-  console.log(`  Valid flow indices: ${result.ok ? "✓ PASS" : "✗ FAIL - " + result.message}\n`);
-
-  // Test 2: Invalid quantity conservation (net flows don't sum to zero)
-  console.log("Test 2: Invalid quantity conservation");
-  const invalidQtyOp: WineryOperation = {
-    id: "test_invalid_qty",
-    type: "transfer",
-    tenantId: "winery1",
-    createdAt: new Date(),
-    inputStateIds: ["state1", "state2"],
-    outputSpecs: [
-      {
-        containerId: "tankA",
-        stateId: "state_out_1",
-        qty: 950,
-        unit: "gal",
-        composition: { realDollars: 4750, nominalDollars: 4800 }
-      }
-    ],
-    flows: [
-      // Invalid: net flow from input 0 is not zero (50 instead of 0)
-      { from: 0, to: 0, qty: 50, unit: "gal", composition: { realDollars: 250, nominalDollars: 240 } }
-    ]
-  };
-
-  result = Invariants.assertQuantityConservation(invalidQtyOp);
-  console.log(`  Should detect violation: ${!result.ok ? "✓ PASS - " + result.code : "✗ FAIL - Should have failed"}\n`);
-
-  // Test 3: Invalid composition conservation (composition doesn't net to zero)
-  console.log("Test 3: Invalid composition conservation");
-  const invalidCompOp: WineryOperation = {
-    id: "test_invalid_comp",
-    type: "transfer",
-    tenantId: "winery1",
-    createdAt: new Date(),
-    inputStateIds: ["state1"],
-    outputSpecs: [
-      {
-        containerId: "tankA",
-        stateId: "state_out_1",
-        qty: 1000,
-        unit: "gal",
-        composition: { realDollars: 5000, nominalDollars: 5000 }
-      }
-    ],
-    flows: [
-      // Invalid: net composition doesn't sum to zero
-      { from: 0, to: 0, qty: 50, unit: "gal", composition: { realDollars: 250, nominalDollars: 240 } },
-      { from: 0, to: 0, qty: -50, unit: "gal", composition: { realDollars: -200, nominalDollars: -240 } } // Wrong real dollars
-    ]
-  };
-
-  result = Invariants.assertCompositionConservation(invalidCompOp);
-  console.log(`  Should detect violation: ${!result.ok ? "✓ PASS - " + result.code : "✗ FAIL - Should have failed"}\n`);
-
-  // Test 4: Invalid flow indices
-  console.log("Test 4: Invalid flow indices");
-  const invalidIndexOp: WineryOperation = {
-    id: "test_invalid_index",
-    type: "transfer",
-    tenantId: "winery1",
-    createdAt: new Date(),
-    inputStateIds: ["state1"],
-    outputSpecs: [
-      {
-        containerId: "tankA",
-        stateId: "state_out_1",
-        qty: 1000,
-        unit: "gal",
-        composition: { realDollars: 5000, nominalDollars: 5000 }
-      }
-    ],
-    flows: [
-      // Invalid: from index 5 doesn't exist (only 0 exists)
-      { from: 5, to: 0, qty: 0, unit: "gal", composition: {} }
-    ]
-  };
-
-  result = Invariants.assertValidFlowIndices(invalidIndexOp);
-  console.log(`  Should detect violation: ${!result.ok ? "✓ PASS - " + result.code : "✗ FAIL - Should have failed"}\n`);
-
-  // Test 5: Nominal dollar conservation violation
-  console.log("Test 5: Nominal dollar conservation");
-  const invalidNominalOp: WineryOperation = {
-    id: "test_invalid_nominal",
-    type: "transfer",
-    tenantId: "winery1",
-    createdAt: new Date(),
-    inputStateIds: ["state1"],
-    outputSpecs: [
-      {
-        containerId: "tankA",
-        stateId: "state_out_1",
-        qty: 1000,
-        unit: "gal",
-        composition: { realDollars: 5000, nominalDollars: 5000 }
-      }
-    ],
-    flows: [
-      // Invalid: nominal dollars don't net to zero (100 instead of 0)
-      { from: 0, to: 0, qty: 0, unit: "gal", composition: { realDollars: 0, nominalDollars: 100 } }
-    ]
-  };
-
-  result = Invariants.assertNominalDollarConservation(invalidNominalOp);
-  console.log(`  Should detect violation: ${!result.ok ? "✓ PASS - " + result.code : "✗ FAIL - Should have failed"}\n`);
-
-  console.log("=== Invariant Tests Complete ===");
-  
-  // Clean up
-  const driver = getDriver();
-  await driver.close();
+// Helper to create a mock state
+function makeState(id: string, qty: bigint, real: bigint, nominal: bigint): ContainerState {
+    return {
+        id,
+        tenantId: "test",
+        createdAt: new Date(),
+        timestamp: new Date(),
+        container: { id: "c_" + id, name: "C " + id, type: "tank", tenantId: "test", createdAt: new Date() },
+        quantifiedComposition: {
+            qty,
+            unit: "gal",
+            attributes: { realDollars: real, nominalDollars: nominal }
+        },
+        flowsTo: [],
+        flowsFrom: []
+    };
 }
 
-testInvariants().catch(console.error);
+// Helper to create a flow
+function makeFlow(from: ContainerState, to: ContainerState, qty: bigint, real: bigint, nominal: bigint): FlowToRelationship {
+    return {
+        from: { id: from.id },
+        to: { id: to.id },
+        properties: {
+            qty,
+            unit: "gal",
+            attributes: { realDollars: real, nominalDollars: nominal }
+        }
+    };
+}
+
+TestHelper.runTest("Invariants Unit Tests", async () => {
+  console.log("=== Testing Invariants ===\n");
+
+  // Setup States
+  const s1 = makeState("s1", 1000n, 1000n, 1000n);
+  const s2 = makeState("s2", 1000n, 1000n, 1000n);
+  const out1 = makeState("out1", 1000n, 1000n, 1000n);
+  const out2 = makeState("out2", 1000n, 1000n, 1000n);
+
+  // Test 1: Valid Transfer
+  // s1 -> out1 (500)
+  // s1 -> out2 (500)
+  // s2 -> out1 (500)
+  // s2 -> out2 (500)
+  // Total Out from s1: 1000. Total In to out1: 1000.
+  
+  const flows1 = [
+      makeFlow(s1, out1, 500n, 500n, 500n),
+      makeFlow(s1, out2, 500n, 500n, 500n),
+      makeFlow(s2, out1, 500n, 500n, 500n),
+      makeFlow(s2, out2, 500n, 500n, 500n)
+  ];
+
+  const op1: WineryOperation = {
+      id: "op1",
+      type: "transfer",
+      tenantId: "test",
+      createdAt: new Date(),
+      inputStates: [s1, s2],
+      outputStates: [out1, out2],
+      flows: flows1
+  };
+
+  let result = Invariants.assertQuantityConservation(op1);
+  console.log(`Test 1 (Qty): ${result.ok ? "PASS" : "FAIL " + result.message}`);
+  if (!result.ok) throw new Error(`Test 1 failed: ${result.message}`);
+  
+  result = Invariants.assertCompositionConservation(op1);
+  console.log(`Test 1 (Comp): ${result.ok ? "PASS" : "FAIL " + result.message}`);
+  if (!result.ok) throw new Error(`Test 1 failed: ${result.message}`);
+
+  // Test 2: Invalid Quantity (Leak)
+  // s1 -> out1 (400) -- Missing 600 from s1
+  const flows2 = [
+      makeFlow(s1, out1, 400n, 400n, 400n)
+  ];
+  const op2: WineryOperation = {
+      ...op1,
+      id: "op2",
+      inputStates: [s1], // Only s1 involved
+      outputStates: [out1], // Only out1 involved
+      flows: flows2
+  };
+  // Note: out1 expects 1000 (from makeState), but getting 400.
+  
+  result = Invariants.assertQuantityConservation(op2);
+  console.log(`Test 2 (Invalid Qty): ${!result.ok ? "PASS" : "FAIL - Should have failed"}`);
+  if (result.ok) throw new Error("Test 2 failed: Should have detected invalid quantity");
+
+  // Test 3: Invalid Composition (Dollars don't match)
+  // s1 -> out1 (1000 gal, but 0 dollars)
+  const flows3 = [
+      makeFlow(s1, out1, 1000n, 0n, 0n)
+  ];
+  const op3: WineryOperation = {
+      ...op1,
+      id: "op3",
+      inputStates: [s1],
+      outputStates: [out1],
+      flows: flows3
+  };
+  
+  result = Invariants.assertCompositionConservation(op3);
+  console.log(`Test 3 (Invalid Comp): ${!result.ok ? "PASS" : "FAIL - Should have failed"}`);
+  if (result.ok) throw new Error("Test 3 failed: Should have detected invalid composition");
+
+  console.log("=== Invariant Tests Complete ===");
+});
+

@@ -40,7 +40,13 @@ async function runAllTests() {
       'testTransferDynamic.ts',
       'testTransferSequence.ts',
       'testInvariants.ts',
-      'testSampleDataCreation.ts'
+      'testSampleDataCreation.ts',
+      'testGain.ts',
+      'testLossTransfer.ts',
+      'testGainLossSequence.ts',
+      'testInventoryAdjustment.ts',
+      'testComplexTransfer.ts',
+      'testCypher.ts'
     ];
 
     console.log('\n🧪 Running individual tests...');

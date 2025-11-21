@@ -3,6 +3,6 @@ import { BaseNode } from "./BaseNode";
 
 export interface Container extends BaseNode {
   name: string;
-  type: "tank" | "barrel" | "bottle" | "loss";
-  capacityHUnits?: number;
+  type: "tank" | "barrel" | "bottle" | "loss" | "gain";
+  capacityHUnits?: bigint;
 }

@@ -39,6 +39,16 @@ Key concepts:
 | Winery Operations | Every action which is transforming a container state is recorded as a winery operation. | From and To container states, flow quantities, gain/loss |
 | Weigh Tags | Interface for recording weigh tag data associated with container states. | Qty, timestamps, id, linked operations |
 
+## 🧪 Testing & Scripts
+
+The `scripts/` directory contains the primary mechanisms for testing, seeding, and verifying the system.
+- **`flowHarness.ts`**: The main integration test runner.
+- **`testScalingParallel.ts`**: Load testing and concurrency verification.
+- **`testLineagePerformance.ts`**: Benchmarking deep graph traversals.
+- **`verifySeeding.ts`**: Validates database integrity against invariants.
+
+Because the system is designed to be "fragile" (fail-fast), these scripts are essential for ensuring that changes do not introduce subtle data corruption.
+
 # Client Layer
 
 Not yet defined. Focus on helpful and visual representation of winery data and operations.

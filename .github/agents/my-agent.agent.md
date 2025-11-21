@@ -121,14 +121,14 @@ When generating domain/repository code, add intent comments:
 - Convert Neo4j DateTime to `Date` when reading: `new Date(c.createdAt)`
 
 ### Invariant Enforcement
-Before committing any write operation (once implemented):
+Before committing any write operation:
 ```typescript
 const violations = await invariants.validateOperation(operation);
 if (violations.length > 0) {
   throw new InvariantViolationError(violations);
 }
 ```
-**Note**: This pattern is planned but not yet enforced. Focus on getting domain model right first.
+
 
 ## Key Files
 
