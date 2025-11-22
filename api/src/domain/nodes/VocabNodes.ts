@@ -1,5 +1,6 @@
 import { BaseNode } from "./BaseNode";
 import { QuantifiedComposition } from "./ContainerState";
+import { Container } from "./Container";
 
 export interface Appellation extends BaseNode {
   name: string;
@@ -22,7 +23,7 @@ export interface Block extends BaseNode {
   weighTags?: WeighTag[];       // from block
 }
 
-export interface WeighTag extends BaseNode {
+export interface WeighTag extends Container {
   tagNumber: string;
   weightLbs: number;
   vintage: number;

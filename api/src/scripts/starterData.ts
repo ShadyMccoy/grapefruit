@@ -66,10 +66,12 @@ for (let i = 0; i < 5; i++) {
       unit: "gal",
       attributes: {
         varietal: { [varietal]: qty },
-        cost: {
-            real: qty * 5n, // $5/gal
-            nominal: qty * 5n
-        }
+        vintage: { "2023": qty },
+        county: { "Napa": qty },
+        state: { "CA": qty },
+        ava: { "Napa Valley": qty },
+        realDollars: qty * 5n, // $5/gal
+        nominalDollars: qty * 5n
       }
     },
     flowsTo: [],

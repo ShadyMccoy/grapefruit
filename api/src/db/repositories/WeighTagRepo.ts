@@ -13,11 +13,15 @@ export class WeighTagRepo {
   constructor(private session: Session) {}
 
   async create(weighTag: WeighTag): Promise<void> {
+    // Create WeighTag node with :Container label and initial ContainerState
     await this.session.run(
       `
-      CREATE (w:WeighTag {
+      CREATE (w:WeighTag:Container {
         id: $id,
         tagNumber: $tagNumber,
+        name: $tagNumber,
+        type: 'weighTag',
+        capacityHUnits: $weightLbs,
         weightLbs: $weightLbs,
         vintage: $vintage,
         qty: $qty,
@@ -26,6 +30,15 @@ export class WeighTagRepo {
         tenantId: $tenantId,
         createdAt: datetime($createdAt)
       })
+      CREATE (s:ContainerState {
+        id: randomUUID(),
+        qty: $qty,
+        unit: $unit,
+        composition: $composition,
+        tenantId: $tenantId,
+        createdAt: datetime($createdAt)
+      })
+      CREATE (w)-[:CURRENT_STATE]->(s)
       `,
       {
         id: weighTag.id,

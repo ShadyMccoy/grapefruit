@@ -18,9 +18,8 @@ type Attributes = {
 /**
  * Distributes a single integer value using the Largest Remainder Method for fairness
  * while maintaining determinism.
- * @private
  */
-function _distributeSingleAttribute(
+export function distributeInteger(
   totalAttrValue: bigint,
   ratioQtys: bigint[],
   priorityOffset: number = 0,
@@ -58,7 +57,7 @@ function _distributeSingleAttribute(
   });
 
   // Distribute the remainder units one by one
-  for (let i = 0; i < remainderUnits; i++) {
+  for (let i = 0; i < Number(remainderUnits); i++) {
     const winnerIndex = shares[i].index;
     distributedValues[winnerIndex]++;
   }
@@ -76,8 +75,13 @@ export type AttributeCategory = 'physical' | 'cost' | 'value';
 
 export const ATTRIBUTE_CATEGORIES: Record<string, AttributeCategory> = {
   'varietal': 'physical',
+  'vintage': 'physical',
+  'ava': 'physical',
+  'county': 'physical',
+  'state': 'physical',
   'realDollars': 'cost',
-  'nominalDollars': 'value'
+  'nominalDollars': 'value',
+  'effectivePounds': 'physical'
 };
 
 export interface FlowDistributionConfig {
@@ -112,7 +116,7 @@ export function distributeComposition(
 
   for (const varietalName of varietalKeys) {
     const totalVarietalQty = sourceVarietals[varietalName];
-    const distributedVarietal = _distributeSingleAttribute(
+    const distributedVarietal = distributeInteger(
       totalVarietalQty,
       flowRatioQtys,
       attrIndex,
@@ -160,7 +164,7 @@ export function distributeComposition(
     // Handle scalar attributes (like nominalDollars often is) or nested objects
     if (typeof attrDict === 'bigint') {
         // Scalar attribute
-        const distributedAttr = _distributeSingleAttribute(
+        const distributedAttr = distributeInteger(
             attrDict,
             ratioQtys
         );
@@ -181,7 +185,7 @@ export function distributeComposition(
         for (const [attrName, totalAttrQty] of Object.entries(
           attrDict as Record<string, bigint>,
         )) {
-          const distributedAttr = _distributeSingleAttribute(
+          const distributedAttr = distributeInteger(
             totalAttrQty,
             ratioQtys,
           );
@@ -308,4 +312,83 @@ export function compositionsEqual(
 ): boolean {
   if (a.qty !== b.qty || a.unit !== b.unit) return false;
   return _recursiveEqual(a.attributes, b.attributes);
+}
+
+/**
+ * Scales a composition to a new quantity and unit, adjusting physical attributes (varietals)
+ * proportionally while preserving abstract attributes (dollars, etc.) exactly.
+ * Used for operations that transform quantity/unit (e.g., Pressing).
+ */
+export function scaleComposition(
+  composition: QuantifiedComposition,
+  newQty: bigint,
+  newUnit: "gal" | "lbs" | "$"
+): QuantifiedComposition {
+  const newAttributes = { ...composition.attributes };
+  const oldQty = composition.qty;
+
+  // 1. Exclusive Attributes (Sum to Qty)
+  const EXCLUSIVE_ATTRIBUTES = ['varietal', 'vintage', 'county', 'state'];
+
+  for (const attrKey of EXCLUSIVE_ATTRIBUTES) {
+    const sourceMap = (composition.attributes[attrKey] ?? {}) as Record<string, bigint>;
+    
+    // Skip if attribute doesn't exist or is empty
+    if (Object.keys(sourceMap).length === 0) continue;
+
+    const keys = Object.keys(sourceMap).sort();
+    const values = keys.map(k => sourceMap[k]);
+    
+    // Distribute newQty based on the ratios of the source values
+    const scaledValues = distributeInteger(newQty, values);
+    
+    const newMap: Record<string, bigint> = {};
+    keys.forEach((key, i) => {
+      if (scaledValues[i] > 0n) {
+        newMap[key] = scaledValues[i];
+      }
+    });
+
+    newAttributes[attrKey] = newMap;
+  }
+
+  // 2. Overlapping Attributes (Can sum > Qty) - AVA
+  // These are scaled independently based on the ratio newQty / oldQty
+  const OVERLAPPING_ATTRIBUTES = ['ava'];
+  
+  for (const attrKey of OVERLAPPING_ATTRIBUTES) {
+    const sourceMap = (composition.attributes[attrKey] ?? {}) as Record<string, bigint>;
+    if (Object.keys(sourceMap).length === 0) continue;
+    
+    const newMap: Record<string, bigint> = {};
+    
+    // If oldQty is 0, we can't scale. Just return empty map? Or copy?
+    // If oldQty is 0, then sourceMap should be empty anyway if invariants hold.
+    if (oldQty === 0n) {
+        newAttributes[attrKey] = {};
+        continue;
+    }
+
+    for (const [key, val] of Object.entries(sourceMap)) {
+        // Scale: val * (newQty / oldQty)
+        // Use integer math: (val * newQty) / oldQty
+        // We don't use distributeInteger because these values are independent.
+        // However, we should probably round consistently?
+        // Simple integer division floors.
+        // (val * newQty * 10000) / oldQty / 10000 ?
+        // Let's just use simple proportion.
+        
+        const scaledVal = (val * newQty) / oldQty;
+        if (scaledVal > 0n) {
+            newMap[key] = scaledVal;
+        }
+    }
+    newAttributes[attrKey] = newMap;
+  }
+  
+  return {
+    qty: newQty,
+    unit: newUnit,
+    attributes: newAttributes
+  };
 }

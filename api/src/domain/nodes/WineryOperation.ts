@@ -1,6 +1,7 @@
 import { FlowToRelationship } from "../relationships/Flow_to";
 import { BaseNode } from "./BaseNode";
 import { ContainerState, QuantifiedComposition } from "./ContainerState";
+import { WeighTag } from "./VocabNodes";
 
 export type OperationType =
   | "transfer"
@@ -9,6 +10,7 @@ export type OperationType =
   | "loss"
   | "adjustment"
   | "press"
+  | "topping"
   | "gain";
 
 export interface WineryOperation extends BaseNode {
@@ -16,7 +18,7 @@ export interface WineryOperation extends BaseNode {
   description?: string;
 
   // Related states (populated when querying, not required for creation)
-  inputStates?: ContainerState[];
+  inputStates?: (ContainerState | WeighTag)[];
   flows?: FlowToRelationship[];
   outputStates?: ContainerState[];
   lossState?: ContainerState;

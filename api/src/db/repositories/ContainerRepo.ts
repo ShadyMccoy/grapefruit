@@ -124,4 +124,25 @@ export class ContainerRepo {
     if (result.records.length === 0) return [];
     return result.records[0].get("foundIds") as string[];
   }
+
+  async addBarrelToGroup(barrelId: string, groupId: string): Promise<void> {
+    await this.session.run(
+      `
+      MATCH (b:Container {id: $barrelId})
+      MATCH (g:Container {id: $groupId})
+      MERGE (b)-[:MEMBER_OF]->(g)
+      `,
+      { barrelId, groupId }
+    );
+  }
+
+  async removeBarrelFromGroup(barrelId: string, groupId: string): Promise<void> {
+    await this.session.run(
+      `
+      MATCH (b:Container {id: $barrelId})-[r:MEMBER_OF]->(g:Container {id: $groupId})
+      DELETE r
+      `,
+      { barrelId, groupId }
+    );
+  }
 }

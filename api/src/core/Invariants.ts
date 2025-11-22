@@ -65,7 +65,7 @@ export class Invariants {
         return await tx.run(
           `
           UNWIND $stateIds AS stateId
-          MATCH (s:ContainerState {id: stateId})
+          MATCH (s) WHERE s.id = stateId AND (s:ContainerState OR s:WeighTag)
           OPTIONAL MATCH (s)-[out:FLOW_TO]->()
           WITH s.id AS id, count(out) AS outgoingFlows
           WHERE outgoingFlows > 0
@@ -93,6 +93,12 @@ export class Invariants {
   // Intent: Validate quantity conservation using delta-based flow model
   // Reasoning: Net flows from each input must sum to zero (what goes out must come back in)
   static assertQuantityConservation(operation: WineryOperation): ValidationResult {
+    // Press operations involve unit conversion (lbs -> gal) and yield loss (pomace),
+    // so strict quantity conservation is not enforced between input and output.
+    if (operation.type === 'press') {
+      return { ok: true };
+    }
+
     if (!operation.flows || !operation.inputStates || !operation.outputStates) {
       return { ok: true }; // No flows to validate
     }
@@ -165,6 +171,11 @@ export class Invariants {
   // Intent: Validate composition conservation (varietals, real/nominal dollars)
   // Reasoning: The sum of compositions of all outgoing flows from an input state must exactly match the input state's composition.
   static assertCompositionConservation(operation: WineryOperation): ValidationResult {
+    // Press operations change the unit and quantity of the composition.
+    if (operation.type === 'press') {
+      return { ok: true };
+    }
+
     if (!operation.flows || !operation.inputStates) {
       return { ok: true };
     }
@@ -265,6 +276,49 @@ export class Invariants {
     return { ok: true };
   }
 
+  // Intent: Validate that exclusive attributes sum to the total quantity
+  // Reasoning: Attributes like varietal, vintage, county, state must sum to 100% of the quantity
+  static assertAttributeSums(operation: WineryOperation): ValidationResult {
+    const statesToCheck = [...(operation.inputStates || []), ...(operation.outputStates || [])];
+    const EXCLUSIVE_ATTRIBUTES = ['varietal', 'vintage', 'county', 'state'];
+    const OVERLAPPING_ATTRIBUTES = ['ava'];
+
+    for (const state of statesToCheck) {
+      const comp = state.quantifiedComposition;
+      if (comp.qty === 0n) continue;
+
+      // 1. Check Exclusive Attributes (Sum == Qty)
+      for (const attrKey of EXCLUSIVE_ATTRIBUTES) {
+        const attrMap = (comp.attributes[attrKey] ?? {}) as Record<string, bigint>;
+        const sum = Object.values(attrMap).reduce((acc, val) => acc + val, 0n);
+
+        // If any keys exist for this attribute type, the sum must equal qty.
+        if (Object.keys(attrMap).length > 0 && sum !== comp.qty) {
+             return {
+              ok: false,
+              code: "ATTRIBUTE_SUM_MISMATCH",
+              message: `Attribute '${attrKey}' in state ${state.id} sums to ${sum} (expected ${comp.qty}).`,
+            };
+        }
+      }
+
+      // 2. Check Overlapping Attributes (Each Value <= Qty)
+      for (const attrKey of OVERLAPPING_ATTRIBUTES) {
+        const attrMap = (comp.attributes[attrKey] ?? {}) as Record<string, bigint>;
+        for (const [key, val] of Object.entries(attrMap)) {
+            if (val > comp.qty) {
+                return {
+                    ok: false,
+                    code: "ATTRIBUTE_VALUE_EXCEEDS_QTY",
+                    message: `Attribute '${attrKey}.${key}' in state ${state.id} has value ${val} which exceeds total quantity ${comp.qty}.`
+                };
+            }
+        }
+      }
+    }
+    return { ok: true };
+  }
+
   // Intent: Batch validation of all invariants for an operation
   // Reasoning: Run all checks before committing to database to ensure integrity
   static async validateOperation(operation: WineryOperation): Promise<ValidationResult[]> {
@@ -275,6 +329,7 @@ export class Invariants {
     results.push(this.assertCompositionConservation(operation));
     results.push(this.assertNominalDollarConservation(operation));
     results.push(this.assertValidFlowIndices(operation));
+    results.push(this.assertAttributeSums(operation));
 
     // Asynchronous validations (require DB access)
     // NOTE: These are now handled inside the write transaction for performance/atomicity.

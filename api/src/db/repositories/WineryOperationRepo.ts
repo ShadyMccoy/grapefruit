@@ -21,7 +21,7 @@ export class WineryOperationRepo {
           const query = `
           // 0. Validate Invariants (Input States Current)
           UNWIND $inputStateIds AS checkId
-          MATCH (s:ContainerState {id: checkId})
+          MATCH (s) WHERE s.id = checkId AND (s:ContainerState OR s:WeighTag)
           OPTIONAL MATCH (s)-[r:FLOW_TO]->()
           WITH checkId, count(r) as spentCount
           // If any input state has outgoing flows, it's not current.
@@ -46,7 +46,7 @@ export class WineryOperationRepo {
           CALL {
             WITH op, inputIds
             UNWIND inputIds AS inId
-            MATCH (inState:ContainerState {id: inId})
+            MATCH (inState) WHERE inState.id = inId AND (inState:ContainerState OR inState:WeighTag)
             CREATE (op)-[:WINERY_OP_INPUT]->(inState)
           }
           
@@ -77,6 +77,14 @@ export class WineryOperationRepo {
             OPTIONAL MATCH (c)-[oldRel:CURRENT_STATE]->(:ContainerState)
             DELETE oldRel
             CREATE (c)-[:CURRENT_STATE]->(out)
+
+            // Snapshot Barrel Group Membership
+            // If this container is a group, link its current members to this new state
+            WITH out, c
+            OPTIONAL MATCH (b:Container)-[:MEMBER_OF]->(c)
+            FOREACH (_ IN CASE WHEN b IS NOT NULL THEN [1] ELSE [] END |
+              CREATE (b)-[:SNAPSHOT_MEMBER_OF]->(out)
+            )
           }
           
           // 3. Create Flows
@@ -84,7 +92,7 @@ export class WineryOperationRepo {
           CALL {
             WITH flows
             UNWIND flows AS f
-            MATCH (fromState:ContainerState {id: f.fromId})
+            MATCH (fromState) WHERE fromState.id = f.fromId AND (fromState:ContainerState OR fromState:WeighTag)
             MATCH (toState:ContainerState {id: f.toId})
             CREATE (fromState)-[:FLOW_TO {
               qty: toInteger(f.qty),

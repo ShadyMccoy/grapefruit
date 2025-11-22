@@ -18,11 +18,26 @@ export class WineryOperationService {
       type: OperationType;
       description?: string;
       fromContainers: ContainerState[];
-      flowQuantities: { fromStateId: string; toStateId: string; qty: bigint }[];
+      flowQuantities: { fromStateId: string; toStateId: string; qty: bigint; unit?: string }[];
+      outputQuantities?: { containerId: string; qty: bigint; unit: string }[];
+      targetFlowQuantities?: { containerId: string; qty: bigint; unit: string }[];
+      inputConsumption?: { stateId: string; qty: bigint }[];
     }): Promise<WineryOperation> {
       const toContainers = OperationBuilder.createOutputStates(params);
-      OperationBuilder.createFlows(params, toContainers);
-      OperationBuilder.assignFlowCompositions(params.fromContainers, toContainers);
+      OperationBuilder.createFlows(params, toContainers, params.type);
+      
+      // If explicit output quantities are provided (e.g. for Press), apply them
+      if (params.outputQuantities) {
+        for (const outConfig of params.outputQuantities) {
+          const state = toContainers.find(s => s.container.id === outConfig.containerId);
+          if (state) {
+            state.quantifiedComposition.qty = outConfig.qty;
+            state.quantifiedComposition.unit = outConfig.unit as any;
+          }
+        }
+      }
+
+      OperationBuilder.assignFlowCompositions(params.fromContainers, toContainers, params.type);
       OperationBuilder.assignOutputCompositions(toContainers);
 
       return this.buildOperation(params, toContainers);
